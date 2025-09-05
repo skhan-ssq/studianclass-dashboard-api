@@ -1,5 +1,6 @@
 # db.py
-import os
+import os, json
+from pathlib import Path
 from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import pooling, Error
@@ -18,7 +19,7 @@ DB_CONFIG = {
     "autocommit": True,
 }
 
-# 🔁 커넥션 풀(권장): 매 요청마다 새 연결 생성 비용↓
+# 🔁 커넥션 풀
 POOL = pooling.MySQLConnectionPool(pool_name="main_pool", pool_size=5, **DB_CONFIG)
 
 def fetch_all(query: str, params: dict | None = None):
@@ -32,11 +33,27 @@ def fetch_all(query: str, params: dict | None = None):
         rows = cur.fetchall()
         return rows
     except Error as e:
-        # 개발 단계 디버그 용(배포 전에는 로그로 전환)
         raise
     finally:
         try:
             if cur: cur.close()
             if conn: conn.close()
-        except:  # 연결 회수 보장
+        except:
             pass
+
+def export_to_json(query: str, out_path: str = "data/progress.json", params: dict | None = None):
+    rows = fetch_all(query, params)
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False)
+    print(f"[OK] {len(rows)} rows → {out_path}")
+
+if __name__ == "__main__":
+    # 실제 원하는 쿼리 실행 (예시: 최근 50개 데이터)
+    export_to_json(
+        """
+        SELECT *
+        FROM metabase_chart_daily_progress
+        LIMIT 50
+        """
+    )
