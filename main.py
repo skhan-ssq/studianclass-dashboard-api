@@ -1,8 +1,10 @@
-# main.py
 from fastapi import FastAPI
-from db import fetch_all
+import json, os
 
 app = FastAPI()
+
+BASE_DIR = os.path.dirname(__file__)
+DATA_PATH = os.path.join(BASE_DIR, "data", "progress.json")
 
 @app.get("/health")
 def health():
@@ -10,5 +12,6 @@ def health():
 
 @app.get("/progress/test")
 def progress_test():
-    rows = fetch_all("SELECT 1 AS ok")
-    return {"ok": True, "rows": rows}
+    with open(DATA_PATH, encoding="utf-8") as f:
+        rows = json.load(f)
+    return {"ok": True, "rows": rows, "source": "file"}
