@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 import json, os, time
 
 app = FastAPI()
@@ -28,12 +28,28 @@ def health():
 def progress_inspect():
     try:
         st = os.stat(DATA_PATH)
-        return {"exists": True, "size_bytes": st.st_size,
-                "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime))}
+        return {
+            "exists": True,
+            "size_bytes": st.st_size,
+            "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime)),
+            "path": DATA_PATH,
+        }
     except FileNotFoundError:
-        return {"exists": False}
+        return {"exists": False, "path": DATA_PATH}
 
 @app.get("/progress/test")
-def progress_test():
+def progress_test(
+    limit: int = Query(10, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     rows = _load_rows()
-    return {"ok": True, "count": len(rows), "rows": rows, "source": "file"}
+    sliced = rows[offset: offset + limit]
+    return {
+        "ok": True,
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "count": len(sliced),
+        "rows": sliced,
+        "source": "file",
+    }
