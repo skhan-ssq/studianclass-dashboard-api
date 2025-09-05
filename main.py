@@ -6,9 +6,9 @@ app = FastAPI()
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"status": "ok"}
 
-@app.get("/progress/sample")
-def sample():
-    rows = fetch_all("SELECT NOW() AS server_time")
-    return rows
+@app.get("/progress/test")
+def progress_test():
+    rows = fetch_all("SELECT 1 AS ok")
+    return {"ok": True, "rows": rows}
