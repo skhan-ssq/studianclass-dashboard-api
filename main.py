@@ -158,13 +158,15 @@ def dashboard():
 <body>
 <div class="wrap">
   <h1>Progress Dashboard</h1>
-  <div class="muted">/chart_grouped API 데이터를 사용합니다. by 한상경</div>
+  <div class="muted">/chart_grouped API 데이터를 사용합니다.</div>
 
-<div class="card">
-  <label class="muted">과정 선택(복수 선택 가능)</label>
-  <select id="groupSel" multiple style="min-width:260px;height:96px"></select>
-  <button id="applyBtn">적용</button>
-</div>
+  <!-- ▼ 드롭다운 카드(여기에 추가) -->
+  <div class="card">
+    <label class="muted">과정 선택(복수 선택 가능)</label>
+    <select id="groupSel" multiple style="min-width:260px;height:96px"></select>
+    <button id="applyBtn">적용</button>
+  </div>
+  <!-- ▲ 드롭다운 카드 -->
 
   <div class="card">
     <h3>Rate by Date</h3>
@@ -177,64 +179,47 @@ def dashboard():
   </div>
 </div>
 
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-(async () => {
-  const res = await fetch('/chart_grouped'); // <- grouped API 사용
-  const js = await res.json();
-  if (!js.ok) throw new Error('chart_grouped api failed');
+let rateChart, incChart;
+const rateEl=document.getElementById('rateChart');
+const incEl=document.getElementById('incChart');
 
-  const labels = js.labels || [];
-  const series = js.series || []; // [{group, rate:[], increased:[], total:[]}]
-
-  if (labels.length === 0 || series.length === 0) {
-    document.body.insertAdjacentHTML('beforeend','<p class="muted">표시할 데이터가 없습니다.</p>');
-    return;
+async function fetchGrouped(groups){
+  const url=new URL('/chart_grouped', location.origin);
+  if(groups && groups.length) url.searchParams.set('group', groups.join(','));
+  const r=await fetch(url); const j=await r.json();
+  if(!j.ok) throw new Error('chart_grouped api failed');
+  return j;
+}
+function fillSelect(series){
+  const sel=document.getElementById('groupSel'); sel.innerHTML='';
+  [...new Set(series.map(s=>s.group||'전체'))].forEach(name=>{
+    const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o);
+  });
+}
+function render(labels,series){
+  if(rateChart) rateChart.destroy(); if(incChart) incChart.destroy();
+  rateChart=new Chart(rateEl,{type:'line',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.rate,tension:0.2,pointRadius:2}))},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}}});
+  incChart=new Chart(incEl,{type:'bar',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.increased}))},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}}});
+}
+(async()=>{
+  try{
+    const j=await fetchGrouped(); fillSelect(j.series); render(j.labels,j.series);
+    document.getElementById('applyBtn').addEventListener('click', async ()=>{
+      const sel=Array.from(document.getElementById('groupSel').selectedOptions).map(o=>o.value);
+      const j2=await fetchGrouped(sel); render(j2.labels,j2.series);
+    });
+  }catch(e){
+    console.error(e);
+    document.body.insertAdjacentHTML('beforeend','<p class="muted">차트를 불러오지 못했습니다.</p>');
   }
-
-  // 라인 차트: rate (그룹별 라인)
-  new Chart(document.getElementById('rateChart'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: series.map(s => ({
-        label: s.group || '전체',
-        data: s.rate,
-        tension: 0.2,
-        pointRadius: 2
-      }))
-    },
-    options: {
-      responsive: true,
-      interaction:{mode:'index',intersect:false},
-      scales:{ y:{ beginAtZero:true } }
-    }
-  });
-
-  // 막대 차트: increased (그룹별 막대)
-  new Chart(document.getElementById('incChart'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: series.map(s => ({
-        label: s.group || '전체',
-        data: s.increased
-      }))
-    },
-    options: {
-      responsive: true,
-      interaction:{mode:'index',intersect:false},
-      scales:{ y:{ beginAtZero:true } }
-    }
-  });
 })();
 </script>
-
-
 </body>
 </html>
 """
+
 
 # 로컬에서 python main.py 실행 시: push만 수행(서버는 안 띄움)
 if __name__ == "__main__":
