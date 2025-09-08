@@ -149,7 +149,7 @@ if __name__ == "__main__":
     export_to_json("""
         SELECT *
         FROM metabase_chart_daily_progress
-        limit 10
+        limit 1
     """)
     # progress.json + db.py 푸시
     push_files(paths=[SNAPSHOT_PATH, "db.py"], branch=GIT_BRANCH, allow_empty=True)
