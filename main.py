@@ -174,7 +174,7 @@ def dashboard():
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 (async () => {
-  const res = await fetch('/chart');
+  const res = await fetch('/chart_grouped');
   const js = await res.json();
   if (!js.ok) { throw new Error('chart api failed'); }
   const pts = js.points || [];
