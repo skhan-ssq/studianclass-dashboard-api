@@ -11,6 +11,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 import json, os, subprocess
+from collections import defaultdict
+from typing import Optional
+
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(BASE_DIR, "data", "progress.json")
@@ -87,14 +90,51 @@ def chart():
             continue
         pts.append({
             "date": d,
-            "rate": r.get("rate"),
+            "group": r.get("study_group_title"),
             "increased": r.get("increased_users"),
             "total": r.get("total_users"),
+            "rate": r.get("rate"),
             # 필요하면 아래에 추가 필드 더 넣기
         })
     # 문자열 날짜 기준 정렬(YYYY-MM-DD 가정)
     pts.sort(key=lambda x: x["date"])
     return {"ok": True, "points": pts}
+
+
+@app.get("/chart_grouped")
+def chart_grouped(group: Optional[str] = Query(default=None, description="김재우의 기초 영어회화 100")):
+    rows = _load_rows()
+    want = {g.strip() for g in group.split(",")} if group else None
+
+    grid = defaultdict(dict)
+    dates = set()
+
+    for r in rows:
+        d = r.get("progress_date")
+        g = r.get("study_group_title") or "전체"
+        if not d: 
+            continue
+        if want and g not in want:
+            continue
+        dates.add(d)
+        grid[g][d] = {
+            "rate": r.get("rate"),
+            "increased": r.get("increased_users"),
+            "total": r.get("total_users"),
+        }
+
+    labels = sorted(dates)
+    series = []
+    for g, by_date in sorted(grid.items()):
+        series.append({
+            "group": g,
+            "rate": [by_date.get(d, {}).get("rate") for d in labels],
+            "increased": [by_date.get(d, {}).get("increased") for d in labels],
+            "total": [by_date.get(d, {}).get("total") for d in labels],
+        })
+    return {"ok": True, "labels": labels, "series": series}
+
+
 
 # 단일 HTML: 여기서 직접 수정하면 됨(별도 파일 없음)
 @app.get("/dashboard", response_class=HTMLResponse)
