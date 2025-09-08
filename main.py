@@ -160,6 +160,12 @@ def dashboard():
   <h1>Progress Dashboard</h1>
   <div class="muted">/chart_grouped API 데이터를 사용합니다. by 한상경</div>
 
+<div class="card">
+  <label class="muted">과정 선택(복수 선택 가능)</label>
+  <select id="groupSel" multiple style="min-width:260px;height:96px"></select>
+  <button id="applyBtn">적용</button>
+</div>
+
   <div class="card">
     <h3>Rate by Date</h3>
     <canvas id="rateChart"></canvas>
