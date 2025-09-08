@@ -158,7 +158,7 @@ def dashboard():
 <body>
 <div class="wrap">
   <h1>Progress Dashboard</h1>
-  <div class="muted">/chart API 데이터를 사용합니다.</div>
+  <div class="muted">/chart_grouped API 데이터를 사용합니다. by 한상경</div>
 
   <div class="card">
     <h3>Rate by Date</h3>
@@ -171,35 +171,61 @@ def dashboard():
   </div>
 </div>
 
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 (async () => {
-  const res = await fetch('/chart_grouped');
+  const res = await fetch('/chart_grouped'); // <- grouped API 사용
   const js = await res.json();
-  if (!js.ok) { throw new Error('chart api failed'); }
-  const pts = js.points || [];
+  if (!js.ok) throw new Error('chart_grouped api failed');
 
-  // -------- 조정 포인트(필드 매핑) --------
-  // 필요 필드명 바꾸려면 여기 수정: p.date / p.rate / p.increased / p.total
-  const labels = pts.map(p => p.date);
-  const rate   = pts.map(p => p.rate ?? null);
-  const inc    = pts.map(p => p.increased ?? null);
+  const labels = js.labels || [];
+  const series = js.series || []; // [{group, rate:[], increased:[], total:[]}]
 
-  // 라인 차트(진도율)
+  if (labels.length === 0 || series.length === 0) {
+    document.body.insertAdjacentHTML('beforeend','<p class="muted">표시할 데이터가 없습니다.</p>');
+    return;
+  }
+
+  // 라인 차트: rate (그룹별 라인)
   new Chart(document.getElementById('rateChart'), {
     type: 'line',
-    data: { labels, datasets: [{ label: 'Rate', data: rate, tension: 0.2 }] },
-    options: { responsive: true, interaction:{mode:'index',intersect:false}, scales:{ y:{ beginAtZero:true } } }
+    data: {
+      labels,
+      datasets: series.map(s => ({
+        label: s.group || '전체',
+        data: s.rate,
+        tension: 0.2,
+        pointRadius: 2
+      }))
+    },
+    options: {
+      responsive: true,
+      interaction:{mode:'index',intersect:false},
+      scales:{ y:{ beginAtZero:true } }
+    }
   });
 
-  // 막대 차트(증가 사용자)
+  // 막대 차트: increased (그룹별 막대)
   new Chart(document.getElementById('incChart'), {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'Increased Users', data: inc }] },
-    options: { responsive: true, interaction:{mode:'index',intersect:false}, scales:{ y:{ beginAtZero:true } } }
+    data: {
+      labels,
+      datasets: series.map(s => ({
+        label: s.group || '전체',
+        data: s.increased
+      }))
+    },
+    options: {
+      responsive: true,
+      interaction:{mode:'index',intersect:false},
+      scales:{ y:{ beginAtZero:true } }
+    }
   });
 })();
 </script>
+
+
 </body>
 </html>
 """
