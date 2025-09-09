@@ -181,7 +181,6 @@ def dashboard():
     body{font-family:system-ui,Segoe UI,Arial;margin:24px;}
     .wrap{max-width:1000px;margin:auto;}
     .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
-    canvas{width:100%;height:320px}
     h1{margin:0 0 16px;}
     .muted{color:#6b7280;font-size:14px}
     /* dropdown */
@@ -190,6 +189,9 @@ def dashboard():
     .hidden{display:none}
     #toggleBtn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
     #applyBtn{margin-top:8px;padding:6px 10px;border:1px solid #2563eb;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+    /* chart size fix: 부모 박스로 높이 고정, 캔버스는 100% 채움 */
+    .chart-box{position:relative;height:320px}
+    .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
   </style>
 </head>
 <body>
@@ -212,12 +214,12 @@ def dashboard():
 
   <div class="card">
     <h3>Rate by Date</h3>
-    <canvas id="rateChart"></canvas>
+    <div class="chart-box"><canvas id="rateChart"></canvas></div>
   </div>
 
   <div class="card">
     <h3>Increased Users by Date</h3>
-    <canvas id="incChart"></canvas>
+    <div class="chart-box"><canvas id="incChart"></canvas></div>
   </div>
 </div>
 
@@ -248,7 +250,8 @@ function fillSelect(series){
   });
 }
 function render(labels,series){
-  if(rateChart) rateChart.destroy(); if(incChart) incChart.destroy();
+  if(rateChart) rateChart.destroy();
+  if(incChart) incChart.destroy();
   const common={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}};
   rateChart=new Chart(rateEl,{type:'line',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.rate,tension:0.2,pointRadius:2}))},options:common});
   incChart=new Chart(incEl,{type:'bar',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.increased}))},options:common});
@@ -267,13 +270,12 @@ function render(labels,series){
       dropdownMenu.classList.add('hidden'); // 적용 후 닫기
     });
 
-    // 드롭다운 외 영역 클릭 시 닫힘(선택사항)
+    // 드롭다운 외 영역 클릭 시 닫힘
     document.addEventListener('click',(e)=>{
       if(!dropdownMenu.contains(e.target) && !toggleBtn.contains(e.target)){
         dropdownMenu.classList.add('hidden');
       }
     });
-
   }catch(e){
     console.error(e);
     document.body.insertAdjacentHTML('beforeend','<p class="muted">차트를 불러오지 못했습니다.</p>');
@@ -282,6 +284,8 @@ function render(labels,series){
 </script>
 </body>
 </html>
+
+
 """
 
 
