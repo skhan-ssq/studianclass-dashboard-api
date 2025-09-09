@@ -1,3 +1,4 @@
+# 25.09.09
 # main.py
 # 기능 요약
 # - /health: 헬스체크
@@ -32,17 +33,34 @@ def _sh(cmd: str, check: bool = True):
 
 def _push_once():
     _log("[push] start")
+    # 1) git 리포 확인 + 브랜치 보장
     _sh("git rev-parse --is-inside-work-tree")
     cur = subprocess.run("git rev-parse --abbrev-ref HEAD", shell=True, text=True, capture_output=True)
     if (cur.stdout or "").strip() != GIT_BRANCH:
         _sh(f"git checkout -B {GIT_BRANCH}")
     _sh("git config core.autocrlf false", check=False)
-    _sh("git add main.py", check=False)
-    _sh('git commit -m "chore: sync main.py on run" --allow-empty', check=False)
+
+    # 2) 병합 중이면 안전하게 중단(충돌로 커밋 막히는 것 방지)
+    _sh("git merge --abort", check=False)
+
+    # 3) 인덱스 정리 후 main.py만 대상으로 작업
+    _sh("git restore --staged -q .", check=False)             # 모든 스테이징 해제
+    # main.py 변경 여부 확인
+    changed = subprocess.run("git diff --quiet -- main.py", shell=True).returncode == 1
+    if changed:
+        _sh("git add -- main.py", check=False)
+        # 스테이징된 게 있으면 커밋
+        if subprocess.run("git diff --cached --quiet", shell=True).returncode == 1:
+            _sh('git commit -m "chore: sync main.py on run"', check=False)
+    else:
+        _log("[push] no change in main.py; skip commit")
+
+    # 4) upstream 유무 확인 후 push
     up = subprocess.run("git rev-parse --abbrev-ref --symbolic-full-name @{u}", shell=True, capture_output=True, text=True)
     first = (up.returncode != 0)
     _sh(f"git push {'-u ' if first else ''}origin {GIT_BRANCH}", check=False)
     _log("[push] done")
+
 
 # -------------------- 데이터 로드 --------------------
 def _load_rows():
@@ -150,9 +168,15 @@ def dashboard():
     body{font-family:system-ui,Segoe UI,Arial;margin:24px;}
     .wrap{max-width:1000px;margin:auto;}
     .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
-    canvas{width:100%;max-height:360px}
+    canvas{width:100%;height:320px}
     h1{margin:0 0 16px;}
     .muted{color:#6b7280;font-size:14px}
+    /* dropdown */
+    .dropdown{position:relative;display:inline-block}
+    .dropdown-menu{position:absolute;background:#fff;border:1px solid #ccc;padding:8px;border-radius:8px;margin-top:4px;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:100}
+    .hidden{display:none}
+    #toggleBtn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
+    #applyBtn{margin-top:8px;padding:6px 10px;border:1px solid #2563eb;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
   </style>
 </head>
 <body>
@@ -160,11 +184,16 @@ def dashboard():
   <h1>Progress Dashboard</h1>
   <div class="muted">/chart_grouped API 데이터를 사용합니다.</div>
 
-  <!-- ▼ 드롭다운 카드(여기에 추가) -->
+  <!-- ▼ 드롭다운 카드 -->
   <div class="card">
-    <label class="muted">과정 선택(복수 선택 가능)</label>
-    <select id="groupSel" multiple style="min-width:260px;height:96px"></select>
-    <button id="applyBtn">적용</button>
+    <label class="muted">과정 선택</label>
+    <div class="dropdown">
+      <button id="toggleBtn">과정 선택 ▼</button>
+      <div id="dropdownMenu" class="dropdown-menu hidden">
+        <select id="groupSel" multiple size="6" style="min-width:260px;"></select>
+        <button id="applyBtn">적용</button>
+      </div>
+    </div>
   </div>
   <!-- ▲ 드롭다운 카드 -->
 
@@ -184,12 +213,19 @@ def dashboard():
 let rateChart, incChart;
 const rateEl=document.getElementById('rateChart');
 const incEl=document.getElementById('incChart');
+const toggleBtn=document.getElementById('toggleBtn');
+const dropdownMenu=document.getElementById('dropdownMenu');
+const applyBtn=document.getElementById('applyBtn');
+
+toggleBtn.addEventListener('click',()=>{ dropdownMenu.classList.toggle('hidden'); });
 
 async function fetchGrouped(groups){
   const url=new URL('/chart_grouped', location.origin);
   if(groups && groups.length) url.searchParams.set('group', groups.join(','));
-  const r=await fetch(url); const j=await r.json();
-  if(!j.ok) throw new Error('chart_grouped api failed');
+  const r=await fetch(url);
+  if(!r.ok) throw new Error('/chart_grouped HTTP '+r.status);
+  const j=await r.json();
+  if(!j || j.ok!==true) throw new Error('invalid payload');
   return j;
 }
 function fillSelect(series){
@@ -200,16 +236,31 @@ function fillSelect(series){
 }
 function render(labels,series){
   if(rateChart) rateChart.destroy(); if(incChart) incChart.destroy();
-  rateChart=new Chart(rateEl,{type:'line',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.rate,tension:0.2,pointRadius:2}))},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}}});
-  incChart=new Chart(incEl,{type:'bar',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.increased}))},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}}});
+  const common={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}};
+  rateChart=new Chart(rateEl,{type:'line',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.rate,tension:0.2,pointRadius:2}))},options:common});
+  incChart=new Chart(incEl,{type:'bar',data:{labels,datasets:series.map(s=>({label:s.group||'전체',data:s.increased}))},options:common});
 }
+
 (async()=>{
   try{
-    const j=await fetchGrouped(); fillSelect(j.series); render(j.labels,j.series);
-    document.getElementById('applyBtn').addEventListener('click', async ()=>{
+    const j=await fetchGrouped();
+    fillSelect(j.series);
+    render(j.labels,j.series);
+
+    applyBtn.addEventListener('click', async ()=>{
       const sel=Array.from(document.getElementById('groupSel').selectedOptions).map(o=>o.value);
-      const j2=await fetchGrouped(sel); render(j2.labels,j2.series);
+      const j2=await fetchGrouped(sel);
+      render(j2.labels,j2.series);
+      dropdownMenu.classList.add('hidden'); // 적용 후 닫기
     });
+
+    // 드롭다운 외 영역 클릭 시 닫힘(선택사항)
+    document.addEventListener('click',(e)=>{
+      if(!dropdownMenu.contains(e.target) && !toggleBtn.contains(e.target)){
+        dropdownMenu.classList.add('hidden');
+      }
+    });
+
   }catch(e){
     console.error(e);
     document.body.insertAdjacentHTML('beforeend','<p class="muted">차트를 불러오지 못했습니다.</p>');
