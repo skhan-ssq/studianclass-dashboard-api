@@ -289,6 +289,13 @@ function render(labels,series){
 """
 
 
-# 로컬에서 python main.py 실행 시: push만 수행(서버는 안 띄움)
+# 로컬에서 python main.py 실행 시: push 여부를 물어봄
 if __name__ == "__main__":
-    _push_once()
+    try:
+        ans = input("👉 Git push 실행할까요? (y/N): ").strip().lower()
+    except EOFError:
+        ans = "n"
+    if ans in ("y", "yes"):
+        _push_once()
+    else:
+        print("[push] skipped")
