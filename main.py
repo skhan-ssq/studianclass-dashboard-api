@@ -292,7 +292,7 @@ function render(labels,series){
 # 로컬에서 python main.py 실행 시: push 여부를 물어봄
 if __name__ == "__main__":
     try:
-        ans = input("👉 Git push 실행할까요? (y/N): ").strip().lower()
+        ans = input("👉 Git push 실행할까요? (y/n): ").strip().lower()
     except EOFError:
         ans = "n"
     if ans in ("y", "yes"):
