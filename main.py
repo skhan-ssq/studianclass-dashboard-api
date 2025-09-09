@@ -91,11 +91,12 @@ def _load_rows():
     raise HTTPException(500, detail="Unexpected JSON format")
 
 # -------------------- FastAPI --------------------
+PUSH_ON_START = os.getenv("PUSH_ON_START","false").lower()=="true"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Render에서 uvicorn으로 실행될 때 서버 기동 시 1회 push
-    try: _push_once()
-    except Exception as e: _log(f"[push warn] {e}")
+    if PUSH_ON_START:
+        try:_push_once()
+        except Exception as e:_log(f"[push warn] {e}")
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -290,15 +291,10 @@ function render(labels,series){
 
 
 # 로컬에서 python main.py 실행 시: push 여부를 물어봄
-if __name__ == "__main__":
-    try:
-        ans = input("👉 GitHub push 및 서버 실행을 진행할까요? (y/N): ").strip().lower()
-    except EOFError:
-        ans = "n"
-
-    if ans in ("y", "yes"):
+if __name__=="__main__":
+    ans=input("GitHub push 및 서버 실행? (y/N): ").strip().lower()
+    if ans in ("y","yes"):
         _push_once()
-        import uvicorn
-        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+        import uvicorn; uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
     else:
-        print("[main] skipped (푸시/서버 실행 안 함)")
+        print("[main] skipped")
