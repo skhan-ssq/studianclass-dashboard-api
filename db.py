@@ -8,6 +8,40 @@ from pathlib import Path
 from dotenv import load_dotenv
 from mysql.connector import pooling, Error
 
+#--------------
+# 모듈 코드 (스냅샷 작업 선언/실행)
+#--------------
+from dataclasses import dataclass
+
+@dataclass
+class SnapshotJob:
+    name: str      # data/{name}.json  → 최종 파일명(확장자 제외)
+    select: str    # "*, id, ..."      → SELECT 절에 들어갈 컬럼 리스트
+    from_: str     # "table"           → FROM 절에 들어갈 테이블/뷰 이름
+    where: str|None=None  # 선택: WHERE 조건
+    limit: int|None=None  # 선택: LIMIT 개수
+
+# ← 여기 목록만 수정하면 됩니다.
+JOBS: list[SnapshotJob] = [
+    SnapshotJob(name="progress", select="*", from_="metabase_chart_daily_progress", limit=600),
+    # 예) SnapshotJob(name="credit_cards", select="id, user_id, amount, approved_at", from_="credit_card_raw", where="approved_at>=CURDATE()-INTERVAL 7 DAY"),
+]
+
+def _build_sql(job: SnapshotJob) -> str:
+    sql = f"SELECT {job.select} FROM {job.from_}"
+    if job.where: sql += f" WHERE {job.where}"
+    if job.limit: sql += f" LIMIT {int(job.limit)}"
+    return sql
+
+def export_job(job: SnapshotJob) -> str:
+    """JOBS 항목을 받아 data/{name}.json 스냅샷 생성"""
+    out_path = f"data/{job.name}.json"
+    export_to_json(_build_sql(job), out_path=out_path)
+    return out_path
+#--------------
+# /모듈 코드
+#--------------
+
 # 환경변수(.env) 로드
 load_dotenv()
 
@@ -144,15 +178,16 @@ def push_files(paths: list[str], branch: str | None = None, allow_empty: bool = 
     remote = subprocess.run(f"git ls-remote origin {branch}", shell=True, text=True, capture_output=True).stdout.split("\t")[0].strip()
     print(f"[OK] git push 완료. local={local[:7]} remote={remote[:7]}")
 
+#--------------
+# 모듈 코드: 실행부
+#--------------
 if __name__ == "__main__":
-    # DB에서 데이터 읽어 스냅샷 저장
-    export_to_json("""
-        SELECT *
-        FROM metabase_chart_daily_progress
-        limit 600
-    """)
-    # progress.json + db.py 푸시
-    push_files(paths=[SNAPSHOT_PATH, "db.py"], branch=GIT_BRANCH, allow_empty=True)
+    # DB에서 데이터 읽어 여러 스냅샷 저장(JOBS 기준)
+    out_files = [export_job(job) for job in JOBS]
+    # 생성된 JSON들 + db.py 푸시 (기존 로직 그대로 사용)
+    push_files(paths=out_files + ["db.py"], branch=GIT_BRANCH, allow_empty=True)
+#--------------
+# /모듈 코드: 실행부
+#--------------
 
-
-# 25.09.08
+# 25.09.09
