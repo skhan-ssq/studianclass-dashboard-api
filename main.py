@@ -133,7 +133,7 @@ def chart():
 
 
 @app.get("/chart_grouped")
-def chart_grouped(group: Optional[str] = Query(default=None, description="김재우의 기초 영어회화 100")):
+def chart_grouped(group: Optional[str] = Query(default=None, description="설명서")):
     rows = _load_rows()
     want = {g.strip() for g in group.split(",")} if group else None
 
@@ -195,7 +195,7 @@ def dashboard():
 <body>
 <div class="wrap">
   <h1>Progress Dashboard</h1>
-  <div class="muted">/chart_grouped API 데이터를 사용합니다.</div>
+  <div class="muted">/chart_grouped API 데이터를 사용합니다. 25.09.09</div>
 
   <!-- ▼ 드롭다운 카드 -->
   <div class="card">
