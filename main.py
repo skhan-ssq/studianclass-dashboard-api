@@ -33,33 +33,46 @@ def _sh(cmd: str, check: bool = True):
 
 def _push_once():
     _log("[push] start")
-    # 1) git 리포 확인 + 브랜치 보장
+    # 리포/브랜치 보장
     _sh("git rev-parse --is-inside-work-tree")
     cur = subprocess.run("git rev-parse --abbrev-ref HEAD", shell=True, text=True, capture_output=True)
     if (cur.stdout or "").strip() != GIT_BRANCH:
         _sh(f"git checkout -B {GIT_BRANCH}")
     _sh("git config core.autocrlf false", check=False)
-
-    # 2) 병합 중이면 안전하게 중단(충돌로 커밋 막히는 것 방지)
     _sh("git merge --abort", check=False)
 
-    # 3) 인덱스 정리 후 main.py만 대상으로 작업
-    _sh("git restore --staged -q .", check=False)             # 모든 스테이징 해제
-    # main.py 변경 여부 확인
+    # main.py만 대상으로 커밋(변경 없으면 스킵)
+    _sh("git restore --staged -q .", check=False)
     changed = subprocess.run("git diff --quiet -- main.py", shell=True).returncode == 1
     if changed:
         _sh("git add -- main.py", check=False)
-        # 스테이징된 게 있으면 커밋
         if subprocess.run("git diff --cached --quiet", shell=True).returncode == 1:
             _sh('git commit -m "chore: sync main.py on run"', check=False)
     else:
         _log("[push] no change in main.py; skip commit")
 
-    # 4) upstream 유무 확인 후 push
+    # upstream 확인
     up = subprocess.run("git rev-parse --abbrev-ref --symbolic-full-name @{u}", shell=True, capture_output=True, text=True)
-    first = (up.returncode != 0)
-    _sh(f"git push {'-u ' if first else ''}origin {GIT_BRANCH}", check=False)
+    first_push = (up.returncode != 0)
+
+    # 1차: 일반 push
+    cp = _sh(f"git push {'-u ' if first_push else ''}origin {GIT_BRANCH}", check=False)
+    if cp.returncode == 0:
+        _log("[push] done"); return
+
+    _log("[push] normal push rejected, try rebase")
+    # 2차: fetch + rebase 후 push
+    _sh("git fetch origin", check=False)
+    _sh(f"git rebase origin/{GIT_BRANCH}", check=False)
+    cp2 = _sh(f"git push origin {GIT_BRANCH}", check=False)
+    if cp2.returncode == 0:
+        _log("[push] done"); return
+
+    _log("[push] rebase push rejected, try force-with-lease (last resort)")
+    # 3차: 안전 강제 푸시
+    _sh(f"git push --force-with-lease origin {GIT_BRANCH}", check=False)
     _log("[push] done")
+
 
 
 # -------------------- 데이터 로드 --------------------
