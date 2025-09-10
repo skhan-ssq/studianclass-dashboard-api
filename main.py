@@ -14,11 +14,27 @@ from contextlib import asynccontextmanager
 import json, os, subprocess
 from collections import defaultdict
 from typing import Optional
+import argparse
+from fastapi.responses import HTMLResponse, JSONResponse
+from datetime import datetime, date
+import threading
 
 
 BASE_DIR = os.path.dirname(__file__)
+
+# --- ★ 파일 경로(원하면 바꾸세요) ---
+PROGRESS_JSON_PATH = os.path.join(BASE_DIR, "data", "study_progress.json")
+CERT_JSON_PATH = os.path.join(BASE_DIR, "data", "study_cert.json")
+BASE_DIR = os.path.dirname(__file__)
 DATA_PATH = os.path.join(BASE_DIR, "data", "progress.json")
 GIT_BRANCH = os.getenv("GIT_BRANCH", "main")
+
+def _env_bool(name: str, default: bool=False) -> bool:
+    """
+    환경변수 값이 true/yes/1/y 면 True, 그 외는 False 반환
+    """
+    return str(os.getenv(name, str(default))).strip().lower() in ("1","true","yes","y")
+
 
 # -------------------- Git: push 한 번 --------------------
 def _log(msg: str): print(msg, flush=True)
@@ -89,6 +105,47 @@ def _load_rows():
     if isinstance(data, dict) and isinstance(data.get("rows"), list):
         return data["rows"]
     raise HTTPException(500, detail="Unexpected JSON format")
+
+
+
+# --- 파일 캐시: 파일 mtime이 같으면 메모리 재사용 ---
+_cache_lock = threading.Lock()
+_cache = {}  # key=path -> {"mtime": float, "rows": list}
+
+def _load_rows_from(path: str):
+    try:
+        mtime = os.path.getmtime(path)
+        with _cache_lock:
+            hit = _cache.get(path)
+            if hit and hit["mtime"] == mtime:
+                return hit["rows"]
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        rows = data if isinstance(data, list) else (data.get("rows") or [])
+        if not isinstance(rows, list):
+            raise HTTPException(500, detail=f"Unexpected JSON format: {os.path.basename(path)}")
+        with _cache_lock:
+            _cache[path] = {"mtime": mtime, "rows": rows}
+        return rows
+    except FileNotFoundError:
+        raise HTTPException(500, detail=f"{os.path.basename(path)} not found")
+    except json.JSONDecodeError as e:
+        raise HTTPException(500, detail={"file": os.path.basename(path), "error": "invalid JSON","msg":e.msg,"lineno":e.lineno,"colno":e.colno})
+
+def _to_date(s) -> date|None:
+    if not s: return None
+    s = str(s)[:10]
+    try: return datetime.fromisoformat(s).date()
+    except: return None
+
+def _to_num(x):
+    try:
+        if x is None or x == "": return None
+        return float(x)
+    except:
+        return None
+
+
 
 # -------------------- FastAPI --------------------
 PUSH_ON_START = os.getenv("PUSH_ON_START","false").lower()=="true"
@@ -165,6 +222,61 @@ def chart_grouped(group: Optional[str] = Query(default=None, description="설명
             "total": [by_date.get(d, {}).get("total") for d in labels],
         })
     return {"ok": True, "labels": labels, "series": series}
+
+
+
+# --- opentalk_code / nickname 옵션 목록 ---
+@app.get("/progress/options")
+def progress_options(opentalk: str | None = Query(default=None, description="선택한 단톡방명(opentalk_code)")):
+    rows = _load_rows_from(PROGRESS_JSON_PATH)
+    codes = set()
+    names = set()
+    for r in rows:
+        code = (r.get("opentalk_code") or "").strip()
+        nick = (r.get("nickname") or "").strip()
+        if not code or not nick: continue
+        codes.add(code)
+        if (opentalk is None) or (code == opentalk):
+            names.add(nick)
+    return {"ok": True, "opentalk_codes": sorted(codes), "nicknames": sorted(names)}
+
+# --- 선택값으로 시계열(진도율) 반환 ---
+@app.get("/progress/series")
+def progress_series(opentalk: str = Query(..., description="단톡방명(opentalk_code)"), nickname: str = Query(..., description="고객명(nickname)")):
+    rows = _load_rows_from(PROGRESS_JSON_PATH)
+    pts = []
+    for r in rows:
+        if (r.get("opentalk_code") or "").strip() != opentalk: continue
+        if (r.get("nickname") or "").strip() != nickname: continue
+        d = _to_date(r.get("progress_date"))
+        if not d: continue
+        pts.append((d.isoformat(), _to_num(r.get("progress"))))
+    pts.sort(key=lambda x: x[0])
+    labels = [d for d, _ in pts]
+    data = [v for _, v in pts]
+    return {"ok": True, "labels": labels, "data": data, "count": len(data)}
+
+# --- 인증 테이블: 선택된 opentalk_code 기준으로 필터 ---
+@app.get("/progress/cert_table")
+def cert_table(opentalk: str = Query(..., description="단톡방명(opentalk_code)")):
+    rows = _load_rows_from(CERT_JSON_PATH)
+    out = []
+    for r in rows:
+        if (r.get("opentalk_code") or "").strip() != opentalk: continue
+        out.append({
+            "name": r.get("name"),
+            "user_rank": r.get("user_rank"),
+            # --- 주의: 컬럼명은 'cert_days_count' 입니다(샘플 기준). ---
+            "cert_days_count": r.get("cert_days_count"),
+            "average_week": r.get("average_week"),
+        })
+    # 보기 좋게 정렬: 랭크 오름차순, 이름
+    out.sort(key=lambda x: (x["user_rank"] if x["user_rank"] is not None else 9999, x["name"] or ""))
+    return {"ok": True, "rows": out, "count": len(out)}
+
+
+
+
 
 
 
@@ -290,11 +402,203 @@ function render(labels,series){
 """
 
 
+@app.get("/dashboard_progress", response_class=HTMLResponse)
+def dashboard_progress():
+    return """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Study Progress & Cert</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:24px;}
+    .wrap{max-width:1100px;margin:auto;}
+    .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
+    h1{margin:0 0 16px;}
+    .muted{color:#6b7280;font-size:14px}
+    /* ▼ 드롭다운(버튼+메뉴) */
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .dropdown{position:relative;display:inline-block}
+    .dropdown-menu{position:absolute;background:#fff;border:1px solid #ccc;padding:8px;border-radius:8px;margin-top:4px;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:100}
+    .hidden{display:none}
+    .btn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
+    .btn.primary{border-color:#2563eb;background:#2563eb;color:#fff}
+    select{min-width:260px;}
+    /* ▼ 차트 */
+    .chart-box{position:relative;height:300px}
+    .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:14px}
+    th{background:#f9fafb}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Study Progress & Certification</h1>
+  <div class="muted">study_progress.json + study_cert.json 기반 (초안)</div>
+
+  <!-- ▼ 필터 영역 -->
+  <div class="card">
+    <div class="row">
+      <!-- ▼ 단톡방 드롭다운 -->
+      <div class="dropdown">
+        <button id="roomBtn" class="btn">단톡방 선택 ▼</button>
+        <div id="roomMenu" class="dropdown-menu hidden">
+          <!-- ★ 수정지점: multiple 사용하려면 multiple 속성 추가, size 조정 -->
+          <select id="roomSel" size="6"></select>
+          <button id="roomApply" class="btn primary" style="margin-top:8px">적용</button>
+        </div>
+      </div>
+
+      <!-- ▼ 고객명 드롭다운 -->
+      <div class="dropdown">
+        <button id="nickBtn" class="btn">고객명 선택 ▼</button>
+        <div id="nickMenu" class="dropdown-menu hidden">
+          <!-- ★ 수정지점: multiple 사용하려면 multiple 속성 추가, size 조정 -->
+          <select id="nickSel" size="6"></select>
+          <button id="nickApply" class="btn primary" style="margin-top:8px">적용</button>
+        </div>
+      </div>
+
+      <!-- 현재 선택 상태 표시 -->
+      <div class="muted" id="picked" style="align-self:center"></div>
+    </div>
+  </div>
+
+  <!-- ▼ 차트 -->
+  <div class="card">
+    <h3>진도율(%)</h3>
+    <div class="chart-box"><canvas id="progressChart"></canvas></div>
+  </div>
+
+  <!-- ▼ 인증 표 -->
+  <div class="card">
+    <h3>인증 현황</h3>
+    <div class="muted" id="certCount"></div>
+    <table>
+      <thead><tr><th>이름</th><th>순위</th><th>인증일수</th><th>주간 평균</th></tr></thead>
+      <tbody id="certTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const $=sel=>document.querySelector(sel);
+const roomBtn=$("#roomBtn"), roomMenu=$("#roomMenu"), roomSel=$("#roomSel"), roomApply=$("#roomApply");
+const nickBtn=$("#nickBtn"), nickMenu=$("#nickMenu"), nickSel=$("#nickSel"), nickApply=$("#nickApply");
+const picked=$("#picked");
+
+let chart;
+const ctx=document.getElementById('progressChart');
+function ensureChart(labels,data){
+  if(chart) chart.destroy();
+  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}};
+  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'진도율',data,pointRadius:2,tension:0.2}]},options});
+}
+
+// ▼ 메뉴 토글(그림과 같은 버튼형 드롭다운 UX)
+roomBtn.addEventListener('click',()=>roomMenu.classList.toggle('hidden'));
+nickBtn.addEventListener('click',()=>nickMenu.classList.toggle('hidden'));
+document.addEventListener('click',e=>{
+  if(!roomMenu.contains(e.target)&&!roomBtn.contains(e.target)) roomMenu.classList.add('hidden');
+  if(!nickMenu.contains(e.target)&&!nickBtn.contains(e.target)) nickMenu.classList.add('hidden');
+});
+
+// --- API 호출 ---
+async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(url+': '+r.status);return await r.json();}
+
+// --- 옵션 채우기 ---
+async function fillRooms(){
+  const j=await getJSON('/progress/options');
+  roomSel.innerHTML='';
+  j.opentalk_codes.forEach(code=>{
+    const o=document.createElement('option'); o.value=code; o.textContent=code; roomSel.appendChild(o);
+  });
+  if(j.opentalk_codes.length){ roomSel.value=j.opentalk_codes[0]; roomBtn.textContent='단톡방: '+j.opentalk_codes[0]+' ▼'; }
+  await fillNicknames(roomSel.value);
+}
+async function fillNicknames(opentalk){
+  const j=await getJSON('/progress/options?opentalk='+encodeURIComponent(opentalk));
+  nickSel.innerHTML='';
+  j.nicknames.forEach(n=>{
+    const o=document.createElement('option'); o.value=n; o.textContent=n; nickSel.appendChild(o);
+  });
+  if(j.nicknames.length){ nickSel.value=j.nicknames[0]; nickBtn.textContent='고객명: '+j.nicknames[0]+' ▼'; }
+}
+
+roomApply.addEventListener('click', async ()=>{
+  const code=roomSel.value;
+  roomBtn.textContent='단톡방: '+(code||'선택')+' ▼';
+  roomMenu.classList.add('hidden');
+  await fillNicknames(code); // 방 바뀌면 닉네임 목록 재생성
+  await refreshAll();        // 방 기준 인증 표도 갱신
+});
+nickApply.addEventListener('click', async ()=>{
+  const name=nickSel.value;
+  nickBtn.textContent='고객명: '+(name||'선택')+' ▼';
+  nickMenu.classList.add('hidden');
+  await refreshAll();
+});
+
+// --- 렌더링 ---
+async function refreshAll(){
+  const code=roomSel.value, name=nickSel.value;
+  picked.textContent = (code?`[${code}]`:'') + (name?` ${name}`:'');
+  // 차트
+  if(code && name){
+    const s=await getJSON(`/progress/series?opentalk=${encodeURIComponent(code)}&nickname=${encodeURIComponent(name)}`);
+    ensureChart(s.labels, s.data);
+  }
+  // 인증표(방 기준)
+  if(code){
+    const t=await getJSON(`/progress/cert_table?opentalk=${encodeURIComponent(code)}`);
+    const tb=$("#certTbody"); tb.innerHTML='';
+    t.rows.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${r.name??''}</td><td>${r.user_rank??''}</td><td>${r.cert_days_count??''}</td><td>${r.average_week??''}</td>`;
+      tb.appendChild(tr);
+    });
+    $("#certCount").textContent=`총 ${t.count}명`;
+  }
+}
+
+// --- 시작 시 로드 ---
+(async()=>{
+  try{
+    await fillRooms();
+    await refreshAll();
+  }catch(e){
+    console.error(e);
+    document.body.insertAdjacentHTML('beforeend','<p class="muted">데이터를 불러오지 못했습니다.</p>');
+  }
+})();
+</script>
+</body>
+</html>
+"""
+
+
+
+
+
 # 로컬에서 python main.py 실행 시: push 여부를 물어봄
-if __name__=="__main__":
-    ans=input("GitHub push 및 서버 실행? (y/N): ").strip().lower()
-    if ans in ("y","yes"):
-        _push_once()
-        import uvicorn; uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    else:
-        print("[main] skipped")
+if __name__ == "__main__":
+    print("=== 로컬 실행 옵션 선택 ===")
+    do_serve = input("로컬 서버 실행할까요? (y/N): ").strip().lower() in ("y", "yes")
+    do_push = input("GitHub push 실행할까요? (y/N): ").strip().lower() in ("y", "yes")
+
+    if do_push:
+        try:
+            _push_once()
+        except Exception as e:
+            print(f"[push error] {e}")
+
+    if do_serve:
+        import uvicorn
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+    if not (do_push or do_serve):
+        print("[main] 아무 작업도 선택하지 않았습니다. 종료합니다.")
+
