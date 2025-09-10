@@ -426,22 +426,20 @@ def dashboard_progress():
     .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
     h1{margin:0 0 16px;}
     .muted{color:#6b7280;font-size:14px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
-    .dropdown{position:relative;display:inline-block}
-    .dropdown-menu{position:absolute;background:#fff;border:1px solid #ccc;padding:8px;border-radius:8px;margin-top:4px;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:100}
-    .hidden{display:none}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .input{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;min-width:260px}
     .btn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
     .btn.primary{border-color:#2563eb;background:#2563eb;color:#fff}
-    select{min-width:260px;}
     .chart-box{position:relative;height:300px}
     .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
-    table{border-collapse:collapse;width:100%;table-layout:fixed;} /* 균등 폭 */
+    table{border-collapse:collapse;width:100%;table-layout:fixed;}
     th,td{border:1px solid #e5e7eb;padding:8px;text-align:center;font-size:14px}
     th{background:#f9fafb}
-    /* 순위 강조 색상 */
-    .rank-1{color:#d4af37;font-weight:700;} /* gold */
-    .rank-2{color:#a7a7a7;font-weight:700;} /* silver */
-    .rank-3{color:#cd7f32;font-weight:700;} /* bronze */
+    /* 순위 배경+글씨색 */
+    .rank-1{background:#fff7d6;color:#7a5c00;font-weight:700;}
+    .rank-2{background:#f0f0f0;color:#555555;font-weight:700;}
+    .rank-3{background:#ffe6d9;color:#7a3d00;font-weight:700;}
   </style>
 </head>
 <body>
@@ -449,26 +447,23 @@ def dashboard_progress():
   <h1>Study Progress & Certification</h1>
   <div class="muted">study_progress.json + study_cert.json 기반</div>
 
-  <!-- ▼ 필터 영역 -->
+  <!-- ▼ 필터 -->
   <div class="card">
     <div class="row">
-      <!-- 단톡방 이름 드롭다운 -->
-      <div class="dropdown">
-        <button id="roomBtn" class="btn">단톡방 이름 선택 ▼</button>
-        <div id="roomMenu" class="dropdown-menu hidden">
-          <select id="roomSel" size="6"></select>
-          <button id="roomApply" class="btn primary" style="margin-top:8px">적용</button>
-        </div>
+      <div class="field">
+        <label class="muted">단톡방 이름</label>
+        <input id="roomInput" class="input" list="roomList" placeholder="단톡방 조회(예: 25년 07월 영어회화 100)">
+        <datalist id="roomList"></datalist>
       </div>
-      <!-- 닉네임 드롭다운 -->
-      <div class="dropdown">
-        <button id="nickBtn" class="btn">닉네임 선택 ▼</button>
-        <div id="nickMenu" class="dropdown-menu hidden">
-          <select id="nickSel" size="6"></select>
-          <button id="nickApply" class="btn primary" style="margin-top:8px">적용</button>
-        </div>
+      <div class="field">
+        <label class="muted">닉네임</label>
+        <input id="nickInput" class="input" list="nickList" placeholder="닉네임 선택">
+        <datalist id="nickList"></datalist>
       </div>
-      <div class="muted" id="picked" style="align-self:center"></div>
+      <div class="field">
+        <button id="applyBtn" class="btn primary">적용</button>
+      </div>
+      <div class="muted" id="picked" style="margin-left:auto"></div>
     </div>
   </div>
 
@@ -495,7 +490,7 @@ def dashboard_progress():
 <script>
 const $=sel=>document.querySelector(sel);
 
-// ★ 방코드 → 표시명 규칙(필요시 아래 매핑 수정)
+// ★ 방코드→표시명
 function roomLabelFromCode(code){
   if(!code) return "";
   const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
@@ -505,110 +500,111 @@ function roomLabelFromCode(code){
   const course = courseMap[key] || key;
   return `${yy}년 ${mm}월 ${course}`;
 }
+// ★ 표시명→방코드(입력값이 라벨일 때 코드 복원)
+function roomCodeFromLabel(label){
+  if(!label) return "";
+  const m = String(label).match(/^(\d{2})년 (\d{2})월 (.+)$/);
+  if(!m) return label; // 이미 코드일 수도 있음
+  const yy=m[1], mm=m[2], course=m[3];
+  const rev = {"영어회화 100":"영어","기초 영어회화 100":"기초","구동사 100":"구동"};
+  const key = rev[course] || course;
+  return yy+mm+key;
+}
 
-const roomBtn=$("#roomBtn"), roomMenu=$("#roomMenu"), roomSel=$("#roomSel"), roomApply=$("#roomApply");
-const nickBtn=$("#nickBtn"), nickMenu=$("#nickMenu"), nickSel=$("#nickSel"), nickApply=$("#nickApply");
-const picked=$("#picked");
-
+// 상태 & 차트
+let currentRooms = [];
 let chart;
 const ctx=document.getElementById('progressChart');
 function ensureChart(labels,data){
   if(chart) chart.destroy();
-  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true,min:0,max:100}}}; // 0~100 고정
+  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true,min:0,max:100}}};
   chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'진도율',data,pointRadius:2,tension:0.2}]},options});
 }
 
-// 메뉴 토글
-roomBtn.addEventListener('click',()=>roomMenu.classList.toggle('hidden'));
-nickBtn.addEventListener('click',()=>nickMenu.classList.toggle('hidden'));
-document.addEventListener('click',e=>{
-  if(!roomMenu.contains(e.target)&&!roomBtn.contains(e.target)) roomMenu.classList.add('hidden');
-  if(!nickMenu.contains(e.target)&&!nickBtn.contains(e.target)) nickMenu.classList.add('hidden');
-});
+// 요소 캐시
+const roomInput=$("#roomInput");   // ★ 단톡방 입력
+const nickInput=$("#nickInput");   // ★ 닉네임 입력
 
+// API
 async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(url+': '+r.status);return await r.json();}
 
-// ▼ 옵션 채우기
+// 옵션 채우기
 async function fillRooms(){
   const j=await getJSON('/progress/options');
-  roomSel.innerHTML='';
-  // 기본 옵션: 단톡방 조회
-  const def=document.createElement('option'); def.value=""; def.textContent="단톡방 조회"; roomSel.appendChild(def);
-  j.opentalk_codes.forEach(code=>{
-    const o=document.createElement('option');
-    o.value=code; o.textContent=roomLabelFromCode(code);
-    roomSel.appendChild(o);
+  currentRooms = j.opentalk_codes || [];
+  const dl=$("#roomList"); dl.innerHTML='';
+  currentRooms.forEach(code=>{
+    const opt=document.createElement('option');
+    opt.value = code;                    // 선택 시 코드가 입력됨
+    opt.label = roomLabelFromCode(code); // 브라우저 자동완성 라벨
+    dl.appendChild(opt);
   });
-  // 닉네임 초기 상태: 아무 값도 없음 + 기본 옵션만
-  nickSel.innerHTML='';
-  const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef);
+  // 닉네임 datalist 초기화
+  $("#nickList").innerHTML='';
 }
 
-async function fillNicknames(opentalk){
-  // 방이 선택되지 않았다면 비워둠
-  if(!opentalk){ nickSel.innerHTML=''; const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef); return; }
-  const j=await getJSON('/progress/options?opentalk='+encodeURIComponent(opentalk));
-  nickSel.innerHTML='';
-  const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef);
-  j.nicknames.forEach(n=>{
-    const o=document.createElement('option'); o.value=n; o.textContent=n; nickSel.appendChild(o);
+// ★ 단톡방 입력 변경 시 → 해당 방의 닉네임 목록 자동 갱신
+roomInput.addEventListener('change', async ()=>{
+  let val = roomInput.value.trim();
+  // 입력이 라벨이면 코드로 환원
+  if(val && !currentRooms.includes(val)){ val = roomCodeFromLabel(val); }
+  // 닉네임 입력값 초기화
+  nickInput.value = "";
+  // 닉네임 목록 갱신(방 없으면 비움)
+  await fillNicknames(val);
+});
+
+async function fillNicknames(opentalkCode){
+  const ndl=$("#nickList"); ndl.innerHTML='';
+  if(!opentalkCode) return;
+  const j=await getJSON('/progress/options?opentalk='+encodeURIComponent(opentalkCode));
+  (j.nicknames||[]).forEach(n=>{
+    const opt=document.createElement('option'); opt.value=n; ndl.appendChild(opt);
   });
 }
 
-roomApply.addEventListener('click', async ()=>{
-  const code=roomSel.value;
-  roomBtn.textContent='단톡방: '+(code?roomLabelFromCode(code):'단톡방 조회')+' ▼';
-  roomMenu.classList.add('hidden');
-  await fillNicknames(code);     // 방 바뀌면 닉네임 목록 갱신
-  await refreshAll();            // 인증표 갱신(차트는 닉네임 선택 후)
-});
-nickApply.addEventListener('click', async ()=>{
-  const name=nickSel.value;
-  nickBtn.textContent='닉네임: '+(name||'닉네임 선택')+' ▼';
-  nickMenu.classList.add('hidden');
-  await refreshAll();
-});
+// 적용
+$("#applyBtn").addEventListener('click', async ()=>{
+  // 방 코드 해석
+  let code = roomInput.value.trim();
+  if(code && !currentRooms.includes(code)){ code = roomCodeFromLabel(code); }
+  const name = nickInput.value.trim();
 
-// 렌더링
-async function refreshAll(){
-  const code=roomSel.value, name=nickSel.value;
-  picked.textContent=(code?`[${roomLabelFromCode(code)}]`:'')+(name?` ${name}`:'');
-  // 차트: 방+닉네임 모두 있어야 조회
+  // 선택 표시
+  $("#picked").textContent = (code?`[${roomLabelFromCode(code)}]`:'') + (name?` ${name}`:'');
+
+  // 차트
   if(code && name){
     const s=await getJSON(`/progress/series?opentalk=${encodeURIComponent(code)}&nickname=${encodeURIComponent(name)}`);
-    ensureChart(s.labels,s.data);
+    ensureChart(s.labels, s.data);
   }else{
-    // 선택 전엔 빈 차트로 유지
     ensureChart([],[]);
   }
-  // 인증표: 방만 있으면 조회(상위 20명)
+
+  // 인증표(상위 20명)
   const tb=$("#certTbody"); tb.innerHTML='';
   $("#certCount").textContent='';
   if(code){
     const t=await getJSON(`/progress/cert_table?opentalk=${encodeURIComponent(code)}`);
-    const top=t.rows.slice(0,20); // 상위 20
+    const top=t.rows.slice(0,20);
     top.forEach(r=>{
-      const rank=(r.user_rank??''); const name=r.name??''; const days=r.cert_days_count??''; 
-      const avgRaw=r.average_week; const avg=(avgRaw!=null && avgRaw!=='')? (Number(avgRaw).toFixed(1)) : ''; // 소수 1자리
-      const tr=document.createElement('tr');
-      // 순위 강조 클래스
+      const rank=(r.user_rank??'');
       const cls = rank==1?'rank-1':(rank==2?'rank-2':(rank==3?'rank-3':''));
-      tr.innerHTML=`
-        <td class="${cls}">${rank}</td>
-        <td>${name}</td>
-        <td>${days}</td>
-        <td>${avg}</td>`;
+      const avgRaw=r.average_week;
+      const avg=(avgRaw!=null && avgRaw!=='')? (Number(avgRaw).toFixed(1)) : '';
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="${cls}">${rank}</td><td>${r.name??''}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
       tb.appendChild(tr);
     });
-    $("#certCount").textContent=`총 ${top.length}명 (상위 20명 표시)`;
+    $("#certCount").textContent=`총 ${Math.min(20, t.rows.length)}명 (상위 20명 표시)`;
   }
-}
+});
 
-// 시작 시
+// 초기
 (async()=>{
   try{
     await fillRooms();
-    ensureChart([],[]); // 초기 빈 차트
+    ensureChart([],[]);
   }catch(e){
     console.error(e);
     document.body.insertAdjacentHTML('beforeend','<p class="muted">데이터를 불러오지 못했습니다.</p>');
