@@ -1,4 +1,4 @@
-# 25.09.09
+# 25.09.10
 # main.py
 # 기능 요약
 # - /health: 헬스체크
@@ -226,6 +226,8 @@ def chart_grouped(group: Optional[str] = Query(default=None, description="설명
 
 
 # --- opentalk_code / nickname 옵션 목록 ---
+
+
 @app.get("/progress/options")
 def progress_options(opentalk: str | None = Query(default=None, description="선택한 단톡방명(opentalk_code)")):
     rows = _load_rows_from(PROGRESS_JSON_PATH)
@@ -239,6 +241,9 @@ def progress_options(opentalk: str | None = Query(default=None, description="선
         if (opentalk is None) or (code == opentalk):
             names.add(nick)
     return {"ok": True, "opentalk_codes": sorted(codes), "nicknames": sorted(names)}
+
+
+
 
 # --- 선택값으로 시계열(진도율) 반환 ---
 @app.get("/progress/series")
@@ -255,6 +260,9 @@ def progress_series(opentalk: str = Query(..., description="단톡방명(opental
     labels = [d for d, _ in pts]
     data = [v for _, v in pts]
     return {"ok": True, "labels": labels, "data": data, "count": len(data)}
+
+
+
 
 # --- 인증 테이블: 선택된 opentalk_code 기준으로 필터 ---
 @app.get("/progress/cert_table")
@@ -402,6 +410,7 @@ function render(labels,series){
 """
 
 
+
 @app.get("/dashboard_progress", response_class=HTMLResponse)
 def dashboard_progress():
     return """
@@ -417,7 +426,6 @@ def dashboard_progress():
     .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
     h1{margin:0 0 16px;}
     .muted{color:#6b7280;font-size:14px}
-    /* ▼ 드롭다운(버튼+메뉴) */
     .row{display:flex;gap:12px;flex-wrap:wrap}
     .dropdown{position:relative;display:inline-block}
     .dropdown-menu{position:absolute;background:#fff;border:1px solid #ccc;padding:8px;border-radius:8px;margin-top:4px;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:100}
@@ -425,43 +433,41 @@ def dashboard_progress():
     .btn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
     .btn.primary{border-color:#2563eb;background:#2563eb;color:#fff}
     select{min-width:260px;}
-    /* ▼ 차트 */
     .chart-box{position:relative;height:300px}
     .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
-    table{border-collapse:collapse;width:100%}
-    th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:14px}
+    table{border-collapse:collapse;width:100%;table-layout:fixed;} /* 균등 폭 */
+    th,td{border:1px solid #e5e7eb;padding:8px;text-align:center;font-size:14px}
     th{background:#f9fafb}
+    /* 순위 강조 색상 */
+    .rank-1{color:#d4af37;font-weight:700;} /* gold */
+    .rank-2{color:#a7a7a7;font-weight:700;} /* silver */
+    .rank-3{color:#cd7f32;font-weight:700;} /* bronze */
   </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Study Progress & Certification</h1>
-  <div class="muted">study_progress.json + study_cert.json 기반 (초안)</div>
+  <div class="muted">study_progress.json + study_cert.json 기반</div>
 
   <!-- ▼ 필터 영역 -->
   <div class="card">
     <div class="row">
-      <!-- ▼ 단톡방 드롭다운 -->
+      <!-- 단톡방 이름 드롭다운 -->
       <div class="dropdown">
-        <button id="roomBtn" class="btn">단톡방 선택 ▼</button>
+        <button id="roomBtn" class="btn">단톡방 이름 선택 ▼</button>
         <div id="roomMenu" class="dropdown-menu hidden">
-          <!-- ★ 수정지점: multiple 사용하려면 multiple 속성 추가, size 조정 -->
           <select id="roomSel" size="6"></select>
           <button id="roomApply" class="btn primary" style="margin-top:8px">적용</button>
         </div>
       </div>
-
-      <!-- ▼ 고객명 드롭다운 -->
+      <!-- 닉네임 드롭다운 -->
       <div class="dropdown">
-        <button id="nickBtn" class="btn">고객명 선택 ▼</button>
+        <button id="nickBtn" class="btn">닉네임 선택 ▼</button>
         <div id="nickMenu" class="dropdown-menu hidden">
-          <!-- ★ 수정지점: multiple 사용하려면 multiple 속성 추가, size 조정 -->
           <select id="nickSel" size="6"></select>
           <button id="nickApply" class="btn primary" style="margin-top:8px">적용</button>
         </div>
       </div>
-
-      <!-- 현재 선택 상태 표시 -->
       <div class="muted" id="picked" style="align-self:center"></div>
     </div>
   </div>
@@ -474,10 +480,12 @@ def dashboard_progress():
 
   <!-- ▼ 인증 표 -->
   <div class="card">
-    <h3>인증 현황</h3>
+    <h3>인증 현황 (상위 20명)</h3>
     <div class="muted" id="certCount"></div>
     <table>
-      <thead><tr><th>이름</th><th>순위</th><th>인증일수</th><th>주간 평균</th></tr></thead>
+      <thead>
+        <tr><th>순위</th><th>이름</th><th>인증일수</th><th>주간 평균</th></tr>
+      </thead>
       <tbody id="certTbody"></tbody>
     </table>
   </div>
@@ -486,6 +494,18 @@ def dashboard_progress():
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const $=sel=>document.querySelector(sel);
+
+// ★ 방코드 → 표시명 규칙(필요시 아래 매핑 수정)
+function roomLabelFromCode(code){
+  if(!code) return "";
+  const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
+  if(!m) return code;
+  const yy=m[1], mm=m[2], key=m[3];
+  const courseMap = {"영어":"영어회화 100","기초":"기초 영어회화 100","구동":"구동사 100"}; // ★ 수정지점
+  const course = courseMap[key] || key;
+  return `${yy}년 ${mm}월 ${course}`;
+}
+
 const roomBtn=$("#roomBtn"), roomMenu=$("#roomMenu"), roomSel=$("#roomSel"), roomApply=$("#roomApply");
 const nickBtn=$("#nickBtn"), nickMenu=$("#nickMenu"), nickSel=$("#nickSel"), nickApply=$("#nickApply");
 const picked=$("#picked");
@@ -494,11 +514,11 @@ let chart;
 const ctx=document.getElementById('progressChart');
 function ensureChart(labels,data){
   if(chart) chart.destroy();
-  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}}};
+  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true,min:0,max:100}}}; // 0~100 고정
   chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'진도율',data,pointRadius:2,tension:0.2}]},options});
 }
 
-// ▼ 메뉴 토글(그림과 같은 버튼형 드롭다운 UX)
+// 메뉴 토글
 roomBtn.addEventListener('click',()=>roomMenu.classList.toggle('hidden'));
 nickBtn.addEventListener('click',()=>nickMenu.classList.toggle('hidden'));
 document.addEventListener('click',e=>{
@@ -506,69 +526,89 @@ document.addEventListener('click',e=>{
   if(!nickMenu.contains(e.target)&&!nickBtn.contains(e.target)) nickMenu.classList.add('hidden');
 });
 
-// --- API 호출 ---
 async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(url+': '+r.status);return await r.json();}
 
-// --- 옵션 채우기 ---
+// ▼ 옵션 채우기
 async function fillRooms(){
   const j=await getJSON('/progress/options');
   roomSel.innerHTML='';
+  // 기본 옵션: 단톡방 조회
+  const def=document.createElement('option'); def.value=""; def.textContent="단톡방 조회"; roomSel.appendChild(def);
   j.opentalk_codes.forEach(code=>{
-    const o=document.createElement('option'); o.value=code; o.textContent=code; roomSel.appendChild(o);
+    const o=document.createElement('option');
+    o.value=code; o.textContent=roomLabelFromCode(code);
+    roomSel.appendChild(o);
   });
-  if(j.opentalk_codes.length){ roomSel.value=j.opentalk_codes[0]; roomBtn.textContent='단톡방: '+j.opentalk_codes[0]+' ▼'; }
-  await fillNicknames(roomSel.value);
+  // 닉네임 초기 상태: 아무 값도 없음 + 기본 옵션만
+  nickSel.innerHTML='';
+  const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef);
 }
+
 async function fillNicknames(opentalk){
+  // 방이 선택되지 않았다면 비워둠
+  if(!opentalk){ nickSel.innerHTML=''; const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef); return; }
   const j=await getJSON('/progress/options?opentalk='+encodeURIComponent(opentalk));
   nickSel.innerHTML='';
+  const nickDef=document.createElement('option'); nickDef.value=""; nickDef.textContent="닉네임 선택"; nickSel.appendChild(nickDef);
   j.nicknames.forEach(n=>{
     const o=document.createElement('option'); o.value=n; o.textContent=n; nickSel.appendChild(o);
   });
-  if(j.nicknames.length){ nickSel.value=j.nicknames[0]; nickBtn.textContent='고객명: '+j.nicknames[0]+' ▼'; }
 }
 
 roomApply.addEventListener('click', async ()=>{
   const code=roomSel.value;
-  roomBtn.textContent='단톡방: '+(code||'선택')+' ▼';
+  roomBtn.textContent='단톡방: '+(code?roomLabelFromCode(code):'단톡방 조회')+' ▼';
   roomMenu.classList.add('hidden');
-  await fillNicknames(code); // 방 바뀌면 닉네임 목록 재생성
-  await refreshAll();        // 방 기준 인증 표도 갱신
+  await fillNicknames(code);     // 방 바뀌면 닉네임 목록 갱신
+  await refreshAll();            // 인증표 갱신(차트는 닉네임 선택 후)
 });
 nickApply.addEventListener('click', async ()=>{
   const name=nickSel.value;
-  nickBtn.textContent='고객명: '+(name||'선택')+' ▼';
+  nickBtn.textContent='닉네임: '+(name||'닉네임 선택')+' ▼';
   nickMenu.classList.add('hidden');
   await refreshAll();
 });
 
-// --- 렌더링 ---
+// 렌더링
 async function refreshAll(){
   const code=roomSel.value, name=nickSel.value;
-  picked.textContent = (code?`[${code}]`:'') + (name?` ${name}`:'');
-  // 차트
+  picked.textContent=(code?`[${roomLabelFromCode(code)}]`:'')+(name?` ${name}`:'');
+  // 차트: 방+닉네임 모두 있어야 조회
   if(code && name){
     const s=await getJSON(`/progress/series?opentalk=${encodeURIComponent(code)}&nickname=${encodeURIComponent(name)}`);
-    ensureChart(s.labels, s.data);
+    ensureChart(s.labels,s.data);
+  }else{
+    // 선택 전엔 빈 차트로 유지
+    ensureChart([],[]);
   }
-  // 인증표(방 기준)
+  // 인증표: 방만 있으면 조회(상위 20명)
+  const tb=$("#certTbody"); tb.innerHTML='';
+  $("#certCount").textContent='';
   if(code){
     const t=await getJSON(`/progress/cert_table?opentalk=${encodeURIComponent(code)}`);
-    const tb=$("#certTbody"); tb.innerHTML='';
-    t.rows.forEach(r=>{
+    const top=t.rows.slice(0,20); // 상위 20
+    top.forEach(r=>{
+      const rank=(r.user_rank??''); const name=r.name??''; const days=r.cert_days_count??''; 
+      const avgRaw=r.average_week; const avg=(avgRaw!=null && avgRaw!=='')? (Number(avgRaw).toFixed(1)) : ''; // 소수 1자리
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td>${r.name??''}</td><td>${r.user_rank??''}</td><td>${r.cert_days_count??''}</td><td>${r.average_week??''}</td>`;
+      // 순위 강조 클래스
+      const cls = rank==1?'rank-1':(rank==2?'rank-2':(rank==3?'rank-3':''));
+      tr.innerHTML=`
+        <td class="${cls}">${rank}</td>
+        <td>${name}</td>
+        <td>${days}</td>
+        <td>${avg}</td>`;
       tb.appendChild(tr);
     });
-    $("#certCount").textContent=`총 ${t.count}명`;
+    $("#certCount").textContent=`총 ${top.length}명 (상위 20명 표시)`;
   }
 }
 
-// --- 시작 시 로드 ---
+// 시작 시
 (async()=>{
   try{
     await fillRooms();
-    await refreshAll();
+    ensureChart([],[]); // 초기 빈 차트
   }catch(e){
     console.error(e);
     document.body.insertAdjacentHTML('beforeend','<p class="muted">데이터를 불러오지 못했습니다.</p>');
@@ -578,6 +618,7 @@ async function refreshAll(){
 </body>
 </html>
 """
+
 
 
 
