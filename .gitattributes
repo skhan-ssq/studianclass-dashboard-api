@@ -1,1 +1,2 @@
 data/progress.json merge=ours
+data/*.json merge=ours
