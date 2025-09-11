@@ -28,7 +28,6 @@ function fillRooms() {
   const codes = [...new Set(progressData.map(r => r.opentalk_code).filter(Boolean))].sort();
   const dl = $("#roomList"); dl.innerHTML = '';
   codes.forEach(code => { const opt = document.createElement('option'); opt.value = code; dl.appendChild(opt); });
-  if (!$('#roomInput').value && codes[0]) $('#roomInput').value = codes[0]; // 첫 값 프리필
   fillNicknames($('#roomInput').value.trim());
 }
 
