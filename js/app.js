@@ -104,12 +104,12 @@ function renderTable(code){
     const rank = r.user_rank ?? '';
     const cls  = rank==1?'rank-1':rank==2?'rank-2':rank==3?'rank-3':'';
 
-    // ✅ 이름 키 다양성 대응
-    const displayName =
-      r.name?.toString().trim() ??
-      r.nickname?.toString().trim() ??
-      r.user_name?.toString().trim() ??
-      r.user?.toString().trim() ?? '';
+    // ✅ 이름 키 우선순위: nickname > name
+    const displayName = (r.nickname && r.nickname.trim()) 
+        ? r.nickname.trim() 
+        : (r.name && r.name.trim()) 
+            ? r.name.trim() 
+            : '';
 
     const avg  = (r.average_week!=null && r.average_week!=='')
       ? Number.parseFloat(r.average_week).toFixed(1) : '';
