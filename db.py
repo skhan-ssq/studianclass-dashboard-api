@@ -73,9 +73,9 @@ JOBS: list[SnapshotJob] = [
     ),
     SnapshotJob(
         name="study_cert",
-        select="opentalk_code, name, user_rank, cert_days_count, average_week",
+        select="opentalk_code, nickname, user_rank, cert_days_count, average_week",
         from_="study_user_cert_wide",
-        order_by="opentalk_code, name"
+        order_by="opentalk_code, nickname"
     ),
     # 예시:
     # SnapshotJob(
