@@ -1,8 +1,4 @@
-// js/app.js
-let progressData=[],
-certData=[],
-chart;
-
+let progressData=[], certData=[], chart;
 const $=s=>document.querySelector(s);
 
 const progressUrl='data/study_progress.json?v='+Date.now();
@@ -20,21 +16,15 @@ function ensureChart(labels,data){
 
 function fillRooms(){
   const codes=[...new Set(progressData.map(r=>r.opentalk_code).filter(Boolean))].sort();
-  const dl=$("#roomList"); dl.innerHTML='';
-  codes.forEach(code=>{
-    const opt=document.createElement('option');
-    opt.value=code; // 입력값으로 쓰일 실제 코드
-    dl.appendChild(opt);
-  });
+  const sel=$("#roomInput");
+  sel.innerHTML=codes.map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
 function fillNicknames(opentalkCode){
-  const ndl=$("#nickList"); ndl.innerHTML='';
+  const nickSel=$("#nickInput"); nickSel.innerHTML='';
   if(!opentalkCode) return;
   const nicks=[...new Set(progressData.filter(r=>r.opentalk_code===opentalkCode).map(r=>r.nickname).filter(Boolean))].sort();
-  nicks.forEach(n=>{
-    const opt=document.createElement('option'); opt.value=n; ndl.appendChild(opt);
-  });
+  nickSel.innerHTML=nicks.map(n=>`<option value="${n}">${n}</option>`).join('');
 }
 
 function renderChart(code,nick){
@@ -67,18 +57,20 @@ function renderTable(code){
 async function load(){
   const [p,c]=await Promise.all([fetch(progressUrl,{cache:'no-store'}),fetch(certUrl,{cache:'no-store'})]);
   progressData=await p.json(); certData=await c.json();
-  fillRooms(); fillNicknames($('#roomInput').value.trim());
+  fillRooms();
+  const firstCode=$("#roomInput").value;
+  fillNicknames(firstCode);
   ensureChart([],[]);
 }
 
 $('#roomInput').addEventListener('change',()=>{
-  fillNicknames($('#roomInput').value.trim());
-  $('#nickInput').value='';
+  const code=$('#roomInput').value;
+  fillNicknames(code);
 });
 
 $('#applyBtn').addEventListener('click',()=>{
-  const code=$('#roomInput').value.trim();
-  const nick=$('#nickInput').value.trim();
+  const code=$('#roomInput').value;
+  const nick=$('#nickInput').value;
   $('#picked').textContent=(code?`[${code}]`:'')+(nick?` ${nick}`:'');
   renderChart(code,nick);
   renderTable(code);
