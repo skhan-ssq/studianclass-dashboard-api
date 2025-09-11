@@ -17,12 +17,12 @@
       <div class="field">
         <label class="muted">단톡방 이름</label>
         <input id="roomInput" class="input" list="roomList" placeholder="단톡방 조회(예: 25년 07월 영어회화 100)">
-        <select id="roomInput" class="input"></select>
+        <datalist id="roomList"></datalist>
       </div>
       <div class="field">
         <label class="muted">닉네임</label>
         <input id="nickInput" class="input" list="nickList" placeholder="닉네임 선택">
-        <select id="nickInput" class="input"></select>
+        <datalist id="nickList"></datalist>
       </div>
       <div class="field">
         <button id="applyBtn" class="btn primary">적용</button>
@@ -30,6 +30,7 @@
       <div class="muted" id="picked" style="margin-left:auto"></div>
     </div>
   </div>
+
 
   <!-- 차트 -->
   <div class="card">
