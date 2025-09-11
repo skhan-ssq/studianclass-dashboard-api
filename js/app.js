@@ -85,6 +85,27 @@ function renderChart(code, nick){
   ensureChart(rows.map(x => fmtDateLabel(x.d)), rows.map(x => x.v));
 }
 
+async function load(){
+  const [p, c] = await Promise.all([
+    fetch(progressUrl, { cache: 'no-store' }),
+    fetch(certUrl, { cache: 'no-store' })
+  ]);
+  const pj = await p.json();
+  const cj = await c.json();
+  progressData = toArray(pj);
+  certData = toArray(cj);
+  fillRooms();
+  ensureChart([], []);
+  
+  // 업데이트 시간 표시
+  const updateAt = pj.generated_at || cj.generated_at;
+  if(updateAt){
+    const d = new Date(updateAt);
+    const formatted = d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    $('#updateTime').textContent = `업데이트: ${formatted}`;
+  }
+}
+
 function renderTable(code){
   const tb = $("#certTbody");
   tb.innerHTML = '';
