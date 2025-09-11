@@ -24,6 +24,9 @@ from dotenv import load_dotenv
 from mysql.connector import pooling, Error
 import zoneinfo
 
+
+load_dotenv()
+
 # -----------------------------
 # 상수/환경설정
 # -----------------------------
@@ -65,7 +68,7 @@ JOBS: list[SnapshotJob] = [
     SnapshotJob(
         name="study_progress",
         select="opentalk_code, nickname, study_group_title, progress_date, progress",
-        from_="render_study_user_progress",
+        from_="json_study_user_progress",
         order_by="opentalk_code, nickname, study_group_title, progress_date"
     ),
     SnapshotJob(
@@ -100,7 +103,7 @@ def _get_table_columns(schema: str, table: str) -> set[str]:
     FROM information_schema.columns
     WHERE table_schema=%(schema)s AND table_name=%(table)s
     """
-    rows = fetch_all(sql, {"schema": os.getenv("DB_NAME"), "table": table})
+    rows = fetch_all(sql, {"schema": schema, "table": table})
     return {r["COLUMN_NAME"] for r in rows}
 
 # --- [추가] select 문자열에서 원본 컬럼명만 추출(단순 파서) ---
