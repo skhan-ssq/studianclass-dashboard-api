@@ -1,5 +1,10 @@
 // js/app.js — 표시명 적용 + 닉네임 합집합 + 날짜포맷
-let progressData = [], certData = [], chart, roomCodes = [];
+let progressData = [],
+certData = [],
+chart, 
+roomCodes = [];
+let roomCodeByLabel = new Map();
+
 const $ = s => document.querySelector(s);
 
 const progressUrl = 'data/study_progress.json?v=' + Date.now();
