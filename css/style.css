@@ -12,6 +12,9 @@ h1{margin:0 0 16px;}
 .chart-box{position:relative;height:300px}
 .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
 
+#dataSource { gap: 8px; }
+#updateTime { margin: 0; }
+
 table{border-collapse:collapse;width:100%;table-layout:fixed;}
 
 th,td{border:1px solid #e5e7eb;padding:8px;text-align:center;font-size:14px}
