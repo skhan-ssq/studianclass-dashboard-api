@@ -96,7 +96,7 @@ function renderTable(code, label){
   tb.innerHTML = '';
   $("#certCount").textContent = '';
   const title = document.getElementById('certTitle'); // HTML에 <h3 id="certTitle"> 준비
-  if(title) title.textContent = code ? `선택한 ${label} 의 인증 현황` : '인증 현황 (상위 20명)';
+  if(title) title.textContent = code ? `${label} 의 인증 현황` : '인증 현황 (상위 20명)';
   if(!code) return;
   const all = certData.filter(r => r.opentalk_code === code);
   const top = all.sort((a, b) => (a.user_rank ?? 9999) - (b.user_rank ?? 9999)).slice(0, 20);
@@ -147,9 +147,9 @@ $('#applyBtn').addEventListener('click', () => {
   const label = roomLabelFromCode(code);
   // 상단 선택 표시
   $('#picked').textContent = (code ? `[${label}]` : '') + (nick ? ` ${nick}` : '');
-  // 그래프 제목: "선택한 [긴 단톡방 명] [닉네임]님의 진도율(%)"
+  // 그래프 제목: "[긴 단톡방 명] [닉네임]님의 진도율(%)"
   const titleEl = document.getElementById('chartTitle'); // HTML에 <h3 id="chartTitle"> 준비
-  if(titleEl) titleEl.textContent = (code && nick) ? `선택한 ${label} ${nick}님의 진도율(%)` : '진도율(%)';
+  if(titleEl) titleEl.textContent = (code && nick) ? `${label} ${nick}님의 진도율(%)` : '진도율(%)';
   renderChart(code, nick);
   renderTable(code, label);
 });
