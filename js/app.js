@@ -42,43 +42,68 @@ function fillNicknames(opentalkCode) {
   nicks.forEach(n => { const o = document.createElement('option'); o.value = n; ndl.appendChild(o); });
 }
 
+// 코드 → 표시명
+function roomLabelFromCode(code){
+  if(!code) return '';
+  const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
+  if(!m) return code;
+  const [, yy, mm, key] = m;
+  const courseMap = { '기초':'기초 영어회화 100', '영어':'영어회화 100', '구동':'구동사 100' };
+  const course = courseMap[key] || key;
+  return `${yy}년 ${mm}월 ${course} 단톡방`;
+}
+
+function fmtDateLabel(iso){
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const w = ['일','월','화','수','목','금','토'][d.getDay()];
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${mm}/${dd}(${w})`;
+}
+
 // 차트 렌더
-function renderChart(code, nick) {
-  if (!(code && nick)) { ensureChart([], []); return; }
+function renderChart(code, nick){
+  if(!(code&&nick)){ ensureChart([],[]); return; }
   const rows = progressData
-    .filter(r => r.opentalk_code === code && r.nickname === nick)
+    .filter(r => r.opentalk_code===code && r.nickname===nick)
     .map(r => ({
-      d: String(r.progress_date).slice(0, 10),
-      v: Number.parseFloat(r.progress) // "64.00" -> 64
+      d: String(r.progress_date).slice(0,10),
+      v: Number.parseFloat(r.progress) // 문자열→숫자
     }))
     .filter(x => x.d && Number.isFinite(x.v))
-    .sort((a, b) => a.d.localeCompare(b.d));
+    .sort((a,b)=>a.d.localeCompare(b.d));
 
-  ensureChart(rows.map(x => x.d), rows.map(x => x.v));
+  const labels = rows.map(x => fmtDateLabel(x.d));
+  const values = rows.map(x => x.v);
+  ensureChart(labels, values);
 }
 
 // 표 렌더
-function renderTable(code) {
+function renderTable(code){
   const tb = $("#certTbody"); tb.innerHTML = '';
   $("#certCount").textContent = '';
-  if (!code) return;
+  if(!code) return;
 
-  const top = certData
-    .filter(r => r.opentalk_code === code)
-    .sort((a, b) => (a.user_rank ?? 9999) - (b.user_rank ?? 9999))
-    .slice(0, 20);
+  const all = certData.filter(r => r.opentalk_code === code);
+  const top = all
+    .sort((a,b)=>(a.user_rank??9999)-(b.user_rank??9999))
+    .slice(0,20);
 
-  top.forEach(r => {
+  top.forEach(r=>{
     const rank = r.user_rank ?? '';
-    const cls  = rank == 1 ? 'rank-1' : rank == 2 ? 'rank-2' : rank == 3 ? 'rank-3' : '';
-    const avg  = (r.average_week != null && r.average_week !== '')
-      ? Number.parseFloat(r.average_week).toFixed(1) : '';
+    const cls  = rank==1?'rank-1':rank==2?'rank-2':rank==3?'rank-3':'';
+    const avg  = (r.average_week!=null && r.average_week!=='')
+                   ? Number.parseFloat(r.average_week).toFixed(1) : '';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="${cls}">${rank}</td><td>${r.name ?? ''}</td><td>${r.cert_days_count ?? ''}</td><td>${avg}</td>`;
+    tr.innerHTML = `<td class="${cls}">${rank}</td><td>${r.name??''}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
     tb.appendChild(tr);
   });
-  $("#certCount").textContent = `총 ${top.length}명 (상위 20명 표시)`;
+
+  const label = roomLabelFromCode(code);
+  $("#certCount").textContent = `[${label}] 총 ${all.length}명 중 상위 20명`;
 }
+
 
 // 초기 로드
 async function load() {
@@ -109,10 +134,20 @@ $('#roomInput').addEventListener('change', () => {
 $('#applyBtn').addEventListener('click', () => {
   const code = $('#roomInput').value.trim();
   const nick = $('#nickInput').value.trim();
-  $('#picked').textContent = (code ? `[${code}]` : '') + (nick ? ` ${nick}` : '');
+  const label = roomLabelFromCode(code);
+
+  // 상단 선택 라벨
+  $('#picked').textContent = (code?`[${label}]`:'') + (nick?` ${nick}`:'');
+
+  // 차트 제목 갱신
+  const titleEl = document.getElementById('chartTitle');
+  titleEl.textContent = (code && nick) ? `${label} ${nick}님의 진도율(%)` : '진도율(%)';
+
   renderChart(code, nick);
   renderTable(code);
 });
+
+
 
 load().catch(e => {
   console.error(e);
