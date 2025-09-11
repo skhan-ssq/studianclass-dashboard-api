@@ -145,8 +145,7 @@ $('#applyBtn').addEventListener('click', () => {
   const code = getSelectedRoomCode();
   const nick = $('#nickInput').value.trim();
   const label = roomLabelFromCode(code);
-  // 상단 선택 표시
-  $('#picked').textContent = (code ? `[${label}]` : '') + (nick ? ` ${nick}` : '');
+
   // 그래프 제목: "[긴 단톡방 명] [닉네임]님의 진도율(%)"
   const titleEl = document.getElementById('chartTitle'); // HTML에 <h3 id="chartTitle"> 준비
   if(titleEl) titleEl.textContent = (code && nick) ? `${label} ${nick}님의 진도율(%)` : '진도율(%)';
