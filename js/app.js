@@ -1,4 +1,4 @@
-// js/app.js — 방은 select, 닉네임은 datalist, 업데이트 시각 표시 포함(완전본)
+// js/app.js — 방: select, 닉네임: datalist, 업데이트 시각/타이틀 규칙 반영
 let progressData = [];
 let certData = [];
 let chart;
@@ -10,7 +10,21 @@ const $ = s => document.querySelector(s);
 
 const progressUrl = 'data/study_progress.json?v=' + Date.now();
 const certUrl     = 'data/study_cert.json?v=' + Date.now();
-const toArray = d => Array.isArray(d) ? d : (d && Array.isArray(d.rows) ? d.rows : []);
+
+/* ---------- 유틸 ---------- */
+// 배열 추출: 실제 JSON 키 대응
+function pickArray(obj, preferKeys){
+  if(Array.isArray(obj)) return obj;
+  for(const k of preferKeys){ if(obj && Array.isArray(obj[k])) return obj[k]; }
+  if(obj && Array.isArray(obj.rows)) return obj.rows;
+  if(obj && obj.data && Array.isArray(obj.data)) return obj.data;
+  return [];
+}
+// generated_at 추출
+function pickGeneratedAt(obj){
+  if(!obj || typeof obj!=='object') return null;
+  return obj.generated_at || (obj.meta && obj.meta.generated_at) || null;
+}
 
 // 코드 → 표시명
 function roomLabelFromCode(code){
@@ -45,15 +59,11 @@ function ensureChart(labels, data){
   chart = new Chart(ctx,{
     type:'line',
     data:{labels, datasets:[{label:'진도율', data, pointRadius:2, tension:0.2}]},
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      interaction:{mode:'index', intersect:false},
-      scales:{y:{beginAtZero:true, min:0, max:100}}
-    }
+    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false}, scales:{y:{beginAtZero:true, min:0, max:100}}}
   });
 }
 
+/* ---------- 드롭다운/목록 ---------- */
 // 방 목록(select): 화면 라벨, 값은 코드
 function fillRooms(){
   roomCodes = [...new Set(
@@ -102,10 +112,23 @@ function fillNicknames(opentalkCode){
   options.forEach(v=>{ const o=document.createElement('option'); o.value=v; ndl.appendChild(o); });
 }
 
+/* ---------- 렌더 ---------- */
+function updateChartTitle(code, nick){
+  const titleEl = document.getElementById('chartTitle');
+  if(!titleEl) return;
+  if(code && nick){
+    titleEl.textContent = `[${roomLabelFromCode(code)}]의 ${nick}님의 진도율(%)`;
+  }else if(code){
+    titleEl.textContent = `[${roomLabelFromCode(code)}]의 진도율(%)`;
+  }else{
+    titleEl.textContent = '진도율(%)';
+  }
+}
+
 function renderChart(code, nick){
   if(!(code && nick)){ ensureChart([],[]); return; }
   const rows = progressData
-    .filter(r=>r.opentalk_code===code && String(r.nickname||'').trim()===nick)
+    .filter(r=>r.opentalk_code===code && String(r.nickname||'').trim()===(nick||'').trim())
     .map(r=>({ d:String(r.progress_date).slice(0,10), v:Number.parseFloat(r.progress) }))
     .filter(x=>x.d && Number.isFinite(x.v))
     .sort((a,b)=>a.d.localeCompare(b.d));
@@ -129,8 +152,7 @@ function renderTable(code){
     const avg = (r.average_week!=null && r.average_week!=='')
       ? Number.parseFloat(r.average_week).toFixed(1) : '';
     const tr=document.createElement('tr');
-    tr.innerHTML =
-      `<td class="${cls}">${rank}</td><td>${displayName}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
+    tr.innerHTML = `<td class="${cls}">${rank}</td><td>${displayName}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
     tb.appendChild(tr);
   });
 
@@ -138,30 +160,26 @@ function renderTable(code){
   $("#certCount").textContent = `[${label}] 총 ${all.length}명 중 상위 20명`;
 }
 
-// 이벤트
+/* ---------- 이벤트 ---------- */
 $('#roomSelect').addEventListener('change', ()=>{
   const code = getSelectedRoomCode();
   fillNicknames(code);
-  $('#nickInput').value = '';
+  updateChartTitle(code, ($('#nickInput').value||'').trim());
 });
-$('#roomSelect').addEventListener('input', ()=>{
+$('#nickInput').addEventListener('input', ()=>{
   const code = getSelectedRoomCode();
-  fillNicknames(code);
+  updateChartTitle(code, ($('#nickInput').value||'').trim());
 });
 
 $('#applyBtn').addEventListener('click', ()=>{
   const code = getSelectedRoomCode();
   const nick = ($('#nickInput').value || '').trim();
-
-  const label = code ? roomLabelFromCode(code) : '';
-  const titleEl = document.getElementById('chartTitle');
-  if(titleEl) titleEl.textContent = (code && nick) ? `${label} ${nick}님의 진도율(%)` : '진도율(%)';
-
+  updateChartTitle(code, nick);
   renderChart(code, nick);
   renderTable(code);
 });
 
-// 데이터 로드
+/* ---------- 데이터 로드 ---------- */
 async function load(){
   const [p,c] = await Promise.all([
     fetch(progressUrl,{cache:'no-store'}),
@@ -170,24 +188,27 @@ async function load(){
   const pj = await p.json();
   const cj = await c.json();
 
-  latestGeneratedAt = pj.generated_at || cj.generated_at || null;
-  progressData = toArray(pj);
-  certData     = toArray(cj);
+  // 핵심: 실제 키에서 배열 추출
+  progressData = pickArray(pj, ['json_study_user_progress','json_study_progress','progress','data']);
+  certData     = pickArray(cj, ['json_study_cert','json_study_user_cert','cert','data']);
+
+  // 업데이트 시간
+  latestGeneratedAt = pickGeneratedAt(pj) || pickGeneratedAt(cj) || null;
 
   fillRooms();
   ensureChart([],[]);
+  updateChartTitle(null,'');
 
-  // 업데이트 시간 표시(Seoul TZ) — 오른쪽 끝에 #updateTime 요소에 넣음
+  // 오른쪽 상단 표시
   if(latestGeneratedAt){
     const d = new Date(latestGeneratedAt);
-    const formatted = d.toLocaleString('ko-KR',{
-      timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'
-    });
+    const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
   }else{
     $('#updateTime').textContent = '';
   }
 }
+
 load().catch(e=>{
   console.error(e);
   document.body.insertAdjacentHTML('beforeend','<p class="muted">데이터를 불러오지 못했습니다.</p>');
