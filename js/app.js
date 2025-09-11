@@ -91,46 +91,42 @@ function renderChart(code, nick){
   ensureChart(rows.map(x => fmtDateLabel(x.d)), rows.map(x => x.v));
 }
 
-function renderTable(code, label){
-  const tb = $("#certTbody");
-  tb.innerHTML = '';
-  $("#certCount").textContent = '';
-  const title = document.getElementById('certTitle'); // HTML에 <h3 id="certTitle"> 준비
-  if(title) title.textContent = code ? `${label} 의 인증 현황` : '인증 현황 (상위 20명)';
+
+function renderTable(code){
+  const tb=$("#certTbody"); tb.innerHTML='';
+  $("#certCount").textContent='';
   if(!code) return;
-  const all = certData.filter(r => r.opentalk_code === code);
-  const top = all.sort((a, b) => (a.user_rank ?? 9999) - (b.user_rank ?? 9999)).slice(0, 20);
-  top.forEach(r => {
+
+  const all = certData.filter(r=>r.opentalk_code===code);
+  const top = all.sort((a,b)=>(a.user_rank??9999)-(b.user_rank??9999)).slice(0,20);
+
+  top.forEach(r=>{
     const rank = r.user_rank ?? '';
-    const cls = rank == 1 ? 'rank-1' : rank == 2 ? 'rank-2' : rank == 3 ? 'rank-3' : '';
-    const avg = (r.average_week != null && r.average_week !== '') ? Number.parseFloat(r.average_week).toFixed(1) : '';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="${cls}">${rank}</td><td>${r.name ?? ''}</td><td>${r.cert_days_count ?? ''}</td><td>${avg}</td>`;
+    const cls  = rank==1?'rank-1':rank==2?'rank-2':rank==3?'rank-3':'';
+
+    // ✅ 이름 키 다양성 대응
+    const displayName =
+      r.name?.toString().trim() ??
+      r.nickname?.toString().trim() ??
+      r.user_name?.toString().trim() ??
+      r.user?.toString().trim() ?? '';
+
+    const avg  = (r.average_week!=null && r.average_week!=='')
+      ? Number.parseFloat(r.average_week).toFixed(1) : '';
+
+    const tr=document.createElement('tr');
+    tr.innerHTML =
+      `<td class="${cls}">${rank}</td>
+       <td>${displayName}</td>
+       <td>${r.cert_days_count??''}</td>
+       <td>${avg}</td>`;
     tb.appendChild(tr);
   });
+
+  const label = roomLabelFromCode(code);
   $("#certCount").textContent = `[${label}] 총 ${all.length}명 중 상위 20명`;
 }
 
-async function load(){
-  const [p, c] = await Promise.all([
-    fetch(progressUrl,{cache:'no-store'}),
-    fetch(certUrl,{cache:'no-store'})
-  ]);
-  const pj = await p.json();
-  const cj = await c.json();
-  progressData = toArray(pj);
-  certData = toArray(cj);
-  fillRooms();
-  ensureChart([],[]);
-  const updateAt = (pj && pj.generated_at) || (cj && cj.generated_at);
-  if(updateAt){
-    const d = new Date(updateAt);
-    const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
-  }else{
-    $('#updateTime').textContent = '';
-  }
-}
 
 
 $('#roomInput').addEventListener('change', () => {
