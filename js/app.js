@@ -1,12 +1,14 @@
-// js/app.js (rows 지원 + 숫자 파싱)
+// rows 구조 지원 + 문자열 숫자 변환(datalist 버전)
 let progressData = [], certData = [], chart;
 const $ = s => document.querySelector(s);
 
 const progressUrl = 'data/study_progress.json?v=' + Date.now();
-const certUrl = 'data/study_cert.json?v=' + Date.now();
+const certUrl     = 'data/study_cert.json?v=' + Date.now();
 
+// 최상위 배열도, {rows:[...]}도 모두 허용
 const toArray = d => Array.isArray(d) ? d : (d && Array.isArray(d.rows) ? d.rows : []);
 
+// 차트
 function ensureChart(labels, data) {
   const ctx = document.getElementById('progressChart').getContext('2d');
   if (chart) chart.destroy();
@@ -21,25 +23,23 @@ function ensureChart(labels, data) {
   });
 }
 
-// 방 목록 datalist 채우기
+// 방 코드 목록 datalist 채우기
 function fillRooms() {
   const codes = [...new Set(progressData.map(r => r.opentalk_code).filter(Boolean))].sort();
   const dl = $("#roomList"); dl.innerHTML = '';
-  codes.forEach(code => {
-    const opt = document.createElement('option');
-    opt.value = code; dl.appendChild(opt);
-  });
-  if (!$('#roomInput').value && codes[0]) $('#roomInput').value = codes[0];
+  codes.forEach(code => { const opt = document.createElement('option'); opt.value = code; dl.appendChild(opt); });
+  if (!$('#roomInput').value && codes[0]) $('#roomInput').value = codes[0]; // 첫 값 프리필
   fillNicknames($('#roomInput').value.trim());
 }
 
-// 닉네임 목록 채우기
+// 선택된 방의 닉네임 datalist 채우기
 function fillNicknames(opentalkCode) {
   const ndl = $("#nickList"); ndl.innerHTML = '';
   if (!opentalkCode) return;
-  const nicks = [...new Set(progressData
-    .filter(r => r.opentalk_code === opentalkCode)
-    .map(r => r.nickname).filter(Boolean))].sort();
+  const nicks = [...new Set(
+    progressData.filter(r => r.opentalk_code === opentalkCode)
+                .map(r => r.nickname).filter(Boolean)
+  )].sort();
   nicks.forEach(n => { const o = document.createElement('option'); o.value = n; ndl.appendChild(o); });
 }
 
@@ -50,7 +50,7 @@ function renderChart(code, nick) {
     .filter(r => r.opentalk_code === code && r.nickname === nick)
     .map(r => ({
       d: String(r.progress_date).slice(0, 10),
-      v: Number.parseFloat(r.progress) // 문자열→숫자
+      v: Number.parseFloat(r.progress) // "64.00" -> 64
     }))
     .filter(x => x.d && Number.isFinite(x.v))
     .sort((a, b) => a.d.localeCompare(b.d));
@@ -71,8 +71,8 @@ function renderTable(code) {
 
   top.forEach(r => {
     const rank = r.user_rank ?? '';
-    const cls = rank == 1 ? 'rank-1' : rank == 2 ? 'rank-2' : rank == 3 ? 'rank-3' : '';
-    const avg = (r.average_week != null && r.average_week !== '')
+    const cls  = rank == 1 ? 'rank-1' : rank == 2 ? 'rank-2' : rank == 3 ? 'rank-3' : '';
+    const avg  = (r.average_week != null && r.average_week !== '')
       ? Number.parseFloat(r.average_week).toFixed(1) : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td class="${cls}">${rank}</td><td>${r.name ?? ''}</td><td>${r.cert_days_count ?? ''}</td><td>${avg}</td>`;
@@ -85,16 +85,15 @@ function renderTable(code) {
 async function load() {
   const [p, c] = await Promise.all([
     fetch(progressUrl, { cache: 'no-store' }),
-    fetch(certUrl, { cache: 'no-store' })
+    fetch(certUrl,     { cache: 'no-store' })
   ]);
   const pJson = await p.json();
   const cJson = await c.json();
 
-  // rows 추출
   progressData = toArray(pJson);
-  certData = toArray(cJson);
+  certData     = toArray(cJson);
 
-  // 로깅(원하면 주석)
+  // 콘솔 확인용(원하면 지워도 됨)
   console.log('progress rows:', progressData.length, 'cert rows:', certData.length);
 
   fillRooms();
