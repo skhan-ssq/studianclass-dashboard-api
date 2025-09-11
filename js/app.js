@@ -113,16 +113,25 @@ function renderTable(code, label){
 
 async function load(){
   const [p, c] = await Promise.all([
-    fetch(progressUrl, { cache: 'no-store' }),
-    fetch(certUrl, { cache: 'no-store' })
+    fetch(progressUrl,{cache:'no-store'}),
+    fetch(certUrl,{cache:'no-store'})
   ]);
   const pj = await p.json();
   const cj = await c.json();
   progressData = toArray(pj);
   certData = toArray(cj);
   fillRooms();
-  ensureChart([], []);
+  ensureChart([],[]);
+  const updateAt = (pj && pj.generated_at) || (cj && cj.generated_at);
+  if(updateAt){
+    const d = new Date(updateAt);
+    const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
+  }else{
+    $('#updateTime').textContent = '';
+  }
 }
+
 
 $('#roomInput').addEventListener('change', () => {
   fillNicknames(getSelectedRoomCode());
