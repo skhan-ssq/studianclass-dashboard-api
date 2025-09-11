@@ -1,1 +1,1 @@
-# [studianclass-dashboard-api](https://studianclass-dashboard-api.onrender.com)
+# [studianclass-dashboard](https://studianclass-dashboard-api.onrender.com)
