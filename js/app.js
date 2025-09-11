@@ -160,6 +160,18 @@ $('#applyBtn').addEventListener('click', ()=>{
   renderTable(code);
 });
 
+
+// 업데이트 시간 표시(Seoul TZ)
+const updateAt = (pj && pj.generated_at) || (cj && cj.generated_at);
+if(updateAt){
+  const d = new Date(updateAt);
+  const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
+}else{
+  $('#updateTime').textContent = '';
+}
+
+
 // ▼ 데이터 로드 (빠졌던 부분)
 async function load(){
   const [p,c] = await Promise.all([
