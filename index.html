@@ -15,23 +15,26 @@
 </div>
 
  
-  <!-- 필터 -->
-  <div class="card">
-    <div class="row">
-      <div class="field">
-        <label class="muted">단톡방 이름</label>
-        <input id="roomInput" class="input" list="roomList" placeholder="단톡방 명을 선택하세요">
-        <datalist id="roomList"></datalist>
-      </div>
-      <div class="field">
-        <label class="muted">닉네임</label>
-        <input id="nickInput" class="input" list="nickList" placeholder="닉네임 선택">
-        <datalist id="nickList"></datalist>
-      </div>
-      <div class="field">
-        <button id="applyBtn" class="btn primary">적용</button>
-      </div>
+<!-- 필터 영역 -->
+<div class="card">
+  <div class="row">
+    <div class="field">
+      <label class="muted">단톡방 이름</label>
+      <select id="roomSelect" class="input select">
+        <option value="">단톡방 명을 선택하세요 ▼</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="muted">닉네임</label>
+      <select id="nickSelect" class="input select">
+        <option value="">닉네임 선택 ▼</option>
+      </select>
+    </div>
+    <div class="field">
+      <button id="applyBtn" class="btn primary">적용</button>
+    </div>
   </div>
+</div>
 
 <!-- 필터 박스 바로 아래 안내문 -->
 <p id="helpNote" class="muted" style="margin:5px 0 11px 0;">* 조회가 안되시는 분은<br>
