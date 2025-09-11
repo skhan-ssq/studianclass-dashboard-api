@@ -1,3 +1,4 @@
+// js/app.js — 방은 select, 닉네임은 datalist, 업데이트 시각 표시 포함(완전본)
 let progressData = [];
 let certData = [];
 let chart;
@@ -11,6 +12,7 @@ const progressUrl = 'data/study_progress.json?v=' + Date.now();
 const certUrl     = 'data/study_cert.json?v=' + Date.now();
 const toArray = d => Array.isArray(d) ? d : (d && Array.isArray(d.rows) ? d.rows : []);
 
+// 코드 → 표시명
 function roomLabelFromCode(code){
   if(!code) return '';
   const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
@@ -21,14 +23,10 @@ function roomLabelFromCode(code){
   return `${yy}년 ${mm}월 ${course} 단톡방`;
 }
 
-// ▼ select 전용 헬퍼
+// 방 select에서 코드 얻기
 function getSelectedRoomCode(){
   const sel = $('#roomSelect');
-  return sel && sel.value ? sel.value : null; // value는 코드(2506기초)
-}
-function getSelectedNick(){
-  const sel = $('#nickSelect');
-  return sel && sel.value ? sel.value.trim() : '';
+  return sel && sel.value ? sel.value : null; // value=코드(예: 2506기초)
 }
 
 // 날짜 포맷: MM/DD(요일)
@@ -47,7 +45,12 @@ function ensureChart(labels, data){
   chart = new Chart(ctx,{
     type:'line',
     data:{labels, datasets:[{label:'진도율', data, pointRadius:2, tension:0.2}]},
-    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false}, scales:{y:{beginAtZero:true, min:0, max:100}}}
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      scales:{y:{beginAtZero:true, min:0, max:100}}
+    }
   });
 }
 
@@ -67,20 +70,20 @@ function fillRooms(){
     const label = roomLabelFromCode(code);
     roomCodeByLabel.set(label, code);
     const opt = document.createElement('option');
-    opt.value = code;        // 내부 값: 코드(예: 2506기초)
-    opt.textContent = label; // 화면: 긴 이름
+    opt.value = code;        // 내부는 코드
+    opt.textContent = label; // 화면은 긴 이름
     sel.appendChild(opt);
   });
 
-  // 닉네임 초기화
-  const nickSel = $("#nickSelect");
-  nickSel.innerHTML = '<option value="">닉네임 선택 ▼</option>';
+  // 닉네임 초기화(datalist)
+  $('#nickInput').value = '';
+  $("#nickList").innerHTML = '';
 }
 
-// 닉네임 목록: progress.nickname 우선 + cert.name 보강
+// 닉네임 목록: progress.nickname 우선 + cert.name 보강 (datalist)
 function fillNicknames(opentalkCode){
-  const nickSel = $("#nickSelect");
-  nickSel.innerHTML = '<option value="">닉네임 선택 ▼</option>';
+  const ndl = $("#nickList");
+  ndl.innerHTML = '';
   if(!opentalkCode) return;
 
   const fromProgress = progressData
@@ -96,11 +99,7 @@ function fillNicknames(opentalkCode){
     .filter(Boolean);
 
   const options = [...nickSet, ...new Set(fromCertOnly)].sort((a,b)=>a.localeCompare(b,'ko'));
-  options.forEach(v=>{
-    const o=document.createElement('option');
-    o.value=v; o.textContent=v+' ▼'.replace(' ▼',''); // 값은 닉, 표시 텍스트는 닉
-    nickSel.appendChild(o);
-  });
+  options.forEach(v=>{ const o=document.createElement('option'); o.value=v; ndl.appendChild(o); });
 }
 
 function renderChart(code, nick){
@@ -139,16 +138,20 @@ function renderTable(code){
   $("#certCount").textContent = `[${label}] 총 ${all.length}명 중 상위 20명`;
 }
 
-// ▼ 이벤트
+// 이벤트
 $('#roomSelect').addEventListener('change', ()=>{
   const code = getSelectedRoomCode();
   fillNicknames(code);
+  $('#nickInput').value = '';
 });
-$('#nickSelect').addEventListener('change', ()=>{ /* 필요시 확장 */ });
+$('#roomSelect').addEventListener('input', ()=>{
+  const code = getSelectedRoomCode();
+  fillNicknames(code);
+});
 
 $('#applyBtn').addEventListener('click', ()=>{
   const code = getSelectedRoomCode();
-  const nick = getSelectedNick();
+  const nick = ($('#nickInput').value || '').trim();
 
   const label = code ? roomLabelFromCode(code) : '';
   const titleEl = document.getElementById('chartTitle');
@@ -158,7 +161,7 @@ $('#applyBtn').addEventListener('click', ()=>{
   renderTable(code);
 });
 
-// ▼ 데이터 로드
+// 데이터 로드
 async function load(){
   const [p,c] = await Promise.all([
     fetch(progressUrl,{cache:'no-store'}),
@@ -174,10 +177,12 @@ async function load(){
   fillRooms();
   ensureChart([],[]);
 
-  // 업데이트 시간 표시(Seoul TZ)
+  // 업데이트 시간 표시(Seoul TZ) — 오른쪽 끝에 #updateTime 요소에 넣음
   if(latestGeneratedAt){
     const d = new Date(latestGeneratedAt);
-    const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const formatted = d.toLocaleString('ko-KR',{
+      timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'
+    });
     $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
   }else{
     $('#updateTime').textContent = '';
