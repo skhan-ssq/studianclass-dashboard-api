@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Study Progress & Cert</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:24px;}
+    .wrap{max-width:1100px;margin:auto;}
+    .card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px}
+    h1{margin:0 0 16px;}
+    .muted{color:#6b7280;font-size:14px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .input{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;min-width:260px}
+    .btn{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer}
+    .btn.primary{border-color:#2563eb;background:#2563eb;color:#fff}
+    .chart-box{position:relative;height:300px}
+    .chart-box canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
+    table{border-collapse:collapse;width:100%;table-layout:fixed;}
+    th,td{border:1px solid #e5e7eb;padding:8px;text-align:center;font-size:14px}
+    th{background:#f9fafb}
+    /* 순위 배경+글씨색 */
+    .rank-1{background:#fff7d6;color:#7a5c00;font-weight:700;}
+    .rank-2{background:#f0f0f0;color:#555555;font-weight:700;}
+    .rank-3{background:#ffe6d9;color:#7a3d00;font-weight:700;}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Study Progress & Certification</h1>
+  <div class="muted">study_progress.json + study_cert.json 기반</div>
+
+  <!-- ▼ 필터 -->
+  <div class="card">
+    <div class="row">
+      <div class="field">
+        <label class="muted">단톡방 이름</label>
+        <input id="roomInput" class="input" list="roomList" placeholder="단톡방 조회(예: 25년 07월 영어회화 100)">
+        <datalist id="roomList"></datalist>
+      </div>
+      <div class="field">
+        <label class="muted">닉네임</label>
+        <input id="nickInput" class="input" list="nickList" placeholder="닉네임 선택">
+        <datalist id="nickList"></datalist>
+      </div>
+      <div class="field">
+        <button id="applyBtn" class="btn primary">적용</button>
+      </div>
+      <div class="muted" id="picked" style="margin-left:auto"></div>
+    </div>
+  </div>
+
+  <!-- ▼ 차트 -->
+  <div class="card">
+    <h3>진도율(%)</h3>
+    <div class="chart-box"><canvas id="progressChart"></canvas></div>
+  </div>
+
+  <!-- ▼ 인증 표 -->
+  <div class="card">
+    <h3>인증 현황 (상위 20명)</h3>
+    <div class="muted" id="certCount"></div>
+    <table>
+      <thead>
+        <tr><th>순위</th><th>이름</th><th>인증일수</th><th>주간 평균</th></tr>
+      </thead>
+      <tbody id="certTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const $=sel=>document.querySelector(sel);
+
+// ★ 방코드→표시명
+function roomLabelFromCode(code){
+  if(!code) return "";
+  const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
+  if(!m) return code;
+  const yy=m[1], mm=m[2], key=m[3];
+  const courseMap = {"영어":"영어회화 100","기초":"기초 영어회화 100","구동":"구동사 100"}; // ★ 수정지점
+  const course = courseMap[key] || key;
+  return `${yy}년 ${mm}월 ${course}`;
+}
+// ★ 표시명→방코드(입력값이 라벨일 때 코드 복원)
+function roomCodeFromLabel(label){
+  if(!label) return "";
+  const m = String(label).match(/^(\d{2})년 (\d{2})월 (.+)$/);
+  if(!m) return label; // 이미 코드일 수도 있음
+  const yy=m[1], mm=m[2], course=m[3];
+  const rev = {"영어회화 100":"영어","기초 영어회화 100":"기초","구동사 100":"구동"};
+  const key = rev[course] || course;
+  return yy+mm+key;
+}
+
+// 상태 & 차트
+let currentRooms = [];
+let chart;
+const ctx=document.getElementById('progressChart');
+function ensureChart(labels,data){
+  if(chart) chart.destroy();
+  const options={responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true,min:0,max:100}}};
+  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'진도율',data,pointRadius:2,tension:0.2}]},options});
+}
+
+// 요소 캐시
+const roomInput=$("#roomInput");   // ★ 단톡방 입력
+const nickInput=$("#nickInput");   // ★ 닉네임 입력
+
+// API
+async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error(url+': '+r.status);return await r.json();}
+
+// 옵션 채우기
+async function fillRooms(){
+  const j=await getJSON('/progress/options');
+  currentRooms = j.opentalk_codes || [];
+  const dl=$("#roomList"); dl.innerHTML='';
+  currentRooms.forEach(code=>{
+    const opt=document.createElement('option');
+    opt.value = code;                    // 선택 시 코드가 입력됨
+    opt.label = roomLabelFromCode(code); // 브라우저 자동완성 라벨
+    dl.appendChild(opt);
+  });
+  // 닉네임 datalist 초기화
+  $("#nickList").innerHTML='';
+}
+
+// ★ 단톡방 입력 변경 시 → 해당 방의 닉네임 목록 자동 갱신
+roomInput.addEventListener('change', async ()=>{
+  let val = roomInput.value.trim();
+  // 입력이 라벨이면 코드로 환원
+  if(val && !currentRooms.includes(val)){ val = roomCodeFromLabel(val); }
+  // 닉네임 입력값 초기화
+  nickInput.value = "";
+  // 닉네임 목록 갱신(방 없으면 비움)
+  await fillNicknames(val);
+});
+
+async function fillNicknames(opentalkCode){
+  const ndl=$("#nickList"); ndl.innerHTML='';
+  if(!opentalkCode) return;
+  const j=await getJSON('/progress/options?opentalk='+encodeURIComponent(opentalkCode));
+  (j.nicknames||[]).forEach(n=>{
+    const opt=document.createElement('option'); opt.value=n; ndl.appendChild(opt);
+  });
+}
+
+// 적용
+$("#applyBtn").addEventListener('click', async ()=>{
+  // 방 코드 해석
+  let code = roomInput.value.trim();
+  if(code && !currentRooms.includes(code)){ code = roomCodeFromLabel(code); }
+  const name = nickInput.value.trim();
+
+  // 선택 표시
+  $("#picked").textContent = (code?`[${roomLabelFromCode(code)}]`:'') + (name?` ${name}`:'');
+
+  // 차트
+  if(code && name){
+    const s=await getJSON(`/progress/series?opentalk=${encodeURIComponent(code)}&nickname=${encodeURIComponent(name)}`);
+    ensureChart(s.labels, s.data);
+  }else{
+    ensureChart([],[]);
+  }
+
+  // 인증표(상위 20명)
+  const tb=$("#certTbody"); tb.innerHTML='';
+  $("#certCount").textContent='';
+  if(code){
+    const t=await getJSON(`/progress/cert_table?opentalk=${encodeURIComponent(code)}`);
+    const top=t.rows.slice(0,20);
+    top.forEach(r=>{
+      const rank=(r.user_rank??'');
+      const cls = rank==1?'rank-1':(rank==2?'rank-2':(rank==3?'rank-3':''));
+      const avgRaw=r.average_week;
+      const avg=(avgRaw!=null && avgRaw!=='')? (Number(avgRaw).toFixed(1)) : '';
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="${cls}">${rank}</td><td>${r.name??''}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
+      tb.appendChild(tr);
+    });
+    $("#certCount").textContent=`총 ${Math.min(20, t.rows.length)}명 (상위 20명 표시)`;
+  }
+});
+
+// 초기
+(async()=>{
+  try{
+    await fillRooms();
+    ensureChart([],[]);
+  }catch(e){
+    console.error(e);
+    document.body.insertAdjacentHTML('beforeend','<p class="muted">데이터를 불러오지 못했습니다.</p>');
+  }
+})();
+</script>
+</body>
+</html>
+"""
