@@ -53,16 +53,27 @@ function ensureChart(labels, data){
 
 // 방 목록(datalist): 값=코드, 라벨=표시명
 function fillRooms(){
-  roomCodes = [...new Set(progressData.map(r=>r.opentalk_code).concat(certData.map(r=>r.opentalk_code)).filter(Boolean))].sort();
+  // (수정) progressData만 사용
+  roomCodes = [...new Set(progressData.map(r=>r.opentalk_code).filter(Boolean))].sort();
+
   const dl = $("#roomList"); dl.innerHTML = '';
+
+  // (추가) 라벨→코드 맵 초기화
+  roomCodeByLabel = new Map();
+
   roomCodes.forEach(code=>{
     const opt = document.createElement('option');
-    opt.value = code;
-    opt.label = roomLabelFromCode(code);
+    // (수정) 값=라벨만 보이게
+    const label = roomLabelFromCode(code);
+    opt.value = label;
+    // (추가) 라벨→코드 보관
+    roomCodeByLabel.set(label, code);
     dl.appendChild(opt);
   });
-  // 기본값 자동세팅 안 함(placeholder 유지)
-  fillNicknames($('#roomInput').value.trim());
+
+  // (수정) 입력값(라벨)→코드 변환해서 전달
+  const selectedCode = roomCodeByLabel.get($('#roomInput').value.trim()) || null;
+  fillNicknames(selectedCode);
 }
 
 // 닉네임 목록: progress + cert 합집합
