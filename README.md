@@ -1,1 +1,2 @@
-# [studianclass-dashboard](https://studianclass-dashboard-api.onrender.com)
+# [studianclass-dashboard](https://skhan-ssq.github.io/studianclass-dashboard/)
+
