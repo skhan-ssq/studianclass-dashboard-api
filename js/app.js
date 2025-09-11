@@ -16,7 +16,10 @@ function roomLabelFromCode(code){
   const course = courseMap[key] || key;
   return `${yy}년 ${mm}월 ${course} 단톡방`;
 }
-// 표시명 → 코드
+
+
+/*
+  // 표시명 → 코드
 function roomCodeFromLabel(label){
   const m = String(label).match(/^(\d{2})년\s*(\d{2})월\s*(.+?)\s*단톡방$/);
   if(!m) return label; // 이미 코드일 수 있음
@@ -25,6 +28,8 @@ function roomCodeFromLabel(label){
   const key = rev[courseText] || courseText;
   return yy + mm + key;
 }
+*/
+
 
 // 날짜 포맷: MM/DD(요일)
 function fmtDateLabel(iso){
