@@ -22,7 +22,7 @@ function roomLabelFromCode(code){
   return `${yy}년 ${mm}월 ${course} 단톡방`;
 }
 
-// 선택된 라벨 → 코드
+// 라벨 → 코드
 function getSelectedRoomCode(){
   const label = $('#roomInput').value.trim();
   return roomCodeByLabel.get(label) || null;
@@ -48,7 +48,7 @@ function ensureChart(labels, data){
   });
 }
 
-// 방 목록(datalist): 값=라벨, 내부=코드 매핑
+// 방 목록(datalist): 화면엔 라벨만, 내부는 코드 매핑
 function fillRooms(){
   roomCodes = [...new Set(progressData.map(r => r.opentalk_code).filter(Boolean))].sort();
   roomCodeByLabel = new Map();
@@ -58,19 +58,25 @@ function fillRooms(){
     const label = roomLabelFromCode(code);
     roomCodeByLabel.set(label, code);
     const opt = document.createElement('option');
-    opt.value = label; // 화면엔 긴 이름만
+    opt.value = label; // 긴 이름만 표시
     dl.appendChild(opt);
   });
   fillNicknames(getSelectedRoomCode());
 }
 
-// 닉네임 목록: progress + cert 합집합
+// 닉네임 목록: progress + cert 합집합(선택된 코드 기준)
 function fillNicknames(opentalkCode){
   const ndl = $("#nickList");
   ndl.innerHTML = '';
   if(!opentalkCode) return;
-  const fromProgress = progressData.filter(r => r.opentalk_code === opentalkCode).map(r => r.nickname && r.nickname.trim()).filter(Boolean);
-  const fromCert = certData.filter(r => r.opentalk_code === opentalkCode).map(r => r.name && r.name.trim()).filter(Boolean);
+  const fromProgress = progressData
+    .filter(r => r.opentalk_code === opentalkCode)
+    .map(r => r.nickname && r.nickname.trim())
+    .filter(Boolean);
+  const fromCert = certData
+    .filter(r => r.opentalk_code === opentalkCode)
+    .map(r => r.name && r.name.trim())
+    .filter(Boolean);
   const nicks = [...new Set(fromProgress.concat(fromCert))].sort((a, b) => a.localeCompare(b, 'ko'));
   nicks.forEach(n => { const o = document.createElement('option'); o.value = n; ndl.appendChild(o); });
 }
@@ -85,31 +91,12 @@ function renderChart(code, nick){
   ensureChart(rows.map(x => fmtDateLabel(x.d)), rows.map(x => x.v));
 }
 
-async function load(){
-  const [p, c] = await Promise.all([
-    fetch(progressUrl, { cache: 'no-store' }),
-    fetch(certUrl, { cache: 'no-store' })
-  ]);
-  const pj = await p.json();
-  const cj = await c.json();
-  progressData = toArray(pj);
-  certData = toArray(cj);
-  fillRooms();
-  ensureChart([], []);
-  
-  // 업데이트 시간 표시
-  const updateAt = pj.generated_at || cj.generated_at;
-  if(updateAt){
-    const d = new Date(updateAt);
-    const formatted = d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-    $('#updateTime').textContent = `업데이트: ${formatted}`;
-  }
-}
-
-function renderTable(code){
+function renderTable(code, label){
   const tb = $("#certTbody");
   tb.innerHTML = '';
   $("#certCount").textContent = '';
+  const title = document.getElementById('certTitle'); // HTML에 <h3 id="certTitle"> 준비
+  if(title) title.textContent = code ? `선택한 ${label} 의 인증 현황` : '인증 현황 (상위 20명)';
   if(!code) return;
   const all = certData.filter(r => r.opentalk_code === code);
   const top = all.sort((a, b) => (a.user_rank ?? 9999) - (b.user_rank ?? 9999)).slice(0, 20);
@@ -121,7 +108,6 @@ function renderTable(code){
     tr.innerHTML = `<td class="${cls}">${rank}</td><td>${r.name ?? ''}</td><td>${r.cert_days_count ?? ''}</td><td>${avg}</td>`;
     tb.appendChild(tr);
   });
-  const label = roomLabelFromCode(code);
   $("#certCount").textContent = `[${label}] 총 ${all.length}명 중 상위 20명`;
 }
 
@@ -130,13 +116,14 @@ async function load(){
     fetch(progressUrl, { cache: 'no-store' }),
     fetch(certUrl, { cache: 'no-store' })
   ]);
-  progressData = toArray(await p.json());
-  certData = toArray(await c.json());
+  const pj = await p.json();
+  const cj = await c.json();
+  progressData = toArray(pj);
+  certData = toArray(cj);
   fillRooms();
   ensureChart([], []);
 }
 
-// 입력 변경: 라벨이 바뀌면 코드로 환원해 닉네임 목록 갱신
 $('#roomInput').addEventListener('change', () => {
   fillNicknames(getSelectedRoomCode());
   $('#nickInput').value = '';
@@ -145,16 +132,17 @@ $('#roomInput').addEventListener('input', () => {
   fillNicknames(getSelectedRoomCode());
 });
 
-// 적용 클릭: 선택된 코드/닉네임으로 렌더링
 $('#applyBtn').addEventListener('click', () => {
   const code = getSelectedRoomCode();
   const nick = $('#nickInput').value.trim();
   const label = roomLabelFromCode(code);
+  // 상단 선택 표시
   $('#picked').textContent = (code ? `[${label}]` : '') + (nick ? ` ${nick}` : '');
-  const titleEl = document.getElementById('chartTitle');
-  if(titleEl) titleEl.textContent = (code && nick) ? `${label} ${nick}님의 진도율(%)` : '진도율(%)';
+  // 그래프 제목: "선택한 [긴 단톡방 명] [닉네임]님의 진도율(%)"
+  const titleEl = document.getElementById('chartTitle'); // HTML에 <h3 id="chartTitle"> 준비
+  if(titleEl) titleEl.textContent = (code && nick) ? `선택한 ${label} ${nick}님의 진도율(%)` : '진도율(%)';
   renderChart(code, nick);
-  renderTable(code);
+  renderTable(code, label);
 });
 
 load().catch(e => {
