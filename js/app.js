@@ -1,9 +1,9 @@
-// js/app.js — 라벨 표시 + 닉네임 우선 + 날짜포맷 + 완전본
 let progressData = [];
 let certData = [];
 let chart;
 let roomCodes = [];
 let roomCodeByLabel = new Map();
+let latestGeneratedAt = null;
 
 const $ = s => document.querySelector(s);
 
@@ -11,7 +11,6 @@ const progressUrl = 'data/study_progress.json?v=' + Date.now();
 const certUrl     = 'data/study_cert.json?v=' + Date.now();
 const toArray = d => Array.isArray(d) ? d : (d && Array.isArray(d.rows) ? d.rows : []);
 
-// 코드 → 표시명
 function roomLabelFromCode(code){
   if(!code) return '';
   const m = String(code).match(/^(\d{2})(\d{2})(.+)$/); // YY MM KEY
@@ -22,12 +21,14 @@ function roomLabelFromCode(code){
   return `${yy}년 ${mm}월 ${course} 단톡방`;
 }
 
-// 입력창(라벨) → 코드
+// ▼ select 전용 헬퍼
 function getSelectedRoomCode(){
-  const label = ($('#roomInput').value || '').trim();
-  if (!label) return null;
-  // 라벨로 매칭 실패 시: 혹시 사용자가 코드를 직접 넣었을 수도 있으니 그대로 사용
-  return roomCodeByLabel.get(label) || (roomCodes.includes(label) ? label : null);
+  const sel = $('#roomSelect');
+  return sel && sel.value ? sel.value : null; // value는 코드(2506기초)
+}
+function getSelectedNick(){
+  const sel = $('#nickSelect');
+  return sel && sel.value ? sel.value.trim() : '';
 }
 
 // 날짜 포맷: MM/DD(요일)
@@ -50,9 +51,8 @@ function ensureChart(labels, data){
   });
 }
 
-// 방 목록(datalist): 화면엔 라벨만, 내부는 코드 매핑
+// 방 목록(select): 화면 라벨, 값은 코드
 function fillRooms(){
-  // progress + cert 합집합(둘 중 하나에만 있어도 방으로 노출)
   roomCodes = [...new Set(
     progressData.map(r=>r.opentalk_code)
       .concat(certData.map(r=>r.opentalk_code))
@@ -60,25 +60,27 @@ function fillRooms(){
   )].sort((a,b)=>a.localeCompare(b,'ko'));
 
   roomCodeByLabel = new Map();
-  const dl = $("#roomList");
-  dl.innerHTML = '';
+  const sel = $("#roomSelect");
+  sel.innerHTML = '<option value="">단톡방 명을 선택하세요 ▼</option>';
+
   roomCodes.forEach(code=>{
     const label = roomLabelFromCode(code);
     roomCodeByLabel.set(label, code);
     const opt = document.createElement('option');
-    opt.value = label; // 사용자는 긴 이름만 보게
-    dl.appendChild(opt);
+    opt.value = code;        // 내부 값: 코드(예: 2506기초)
+    opt.textContent = label; // 화면: 긴 이름
+    sel.appendChild(opt);
   });
 
-  // 처음엔 닉네임 비워둠(placeholder 유지)
-  $('#nickInput').value = '';
-  $("#nickList").innerHTML = '';
+  // 닉네임 초기화
+  const nickSel = $("#nickSelect");
+  nickSel.innerHTML = '<option value="">닉네임 선택 ▼</option>';
 }
 
-// 닉네임 목록: progress(nickname) + cert(name) 합집합
+// 닉네임 목록: progress.nickname 우선 + cert.name 보강
 function fillNicknames(opentalkCode){
-  const ndl = $("#nickList");
-  ndl.innerHTML = '';
+  const nickSel = $("#nickSelect");
+  nickSel.innerHTML = '<option value="">닉네임 선택 ▼</option>';
   if(!opentalkCode) return;
 
   const fromProgress = progressData
@@ -89,18 +91,22 @@ function fillNicknames(opentalkCode){
   const nickSet = new Set(fromProgress);
 
   const fromCertOnly = certData
-    .filter(r=>r.opentalk_code===opentalkCode && !nickSet.has(r.name))
+    .filter(r=>r.opentalk_code===opentalkCode && !nickSet.has((r.name||'').trim()))
     .map(r=>r.name && r.name.trim())
     .filter(Boolean);
 
   const options = [...nickSet, ...new Set(fromCertOnly)].sort((a,b)=>a.localeCompare(b,'ko'));
-  options.forEach(v=>{ const o=document.createElement('option'); o.value=v; ndl.appendChild(o); });
+  options.forEach(v=>{
+    const o=document.createElement('option');
+    o.value=v; o.textContent=v+' ▼'.replace(' ▼',''); // 값은 닉, 표시 텍스트는 닉
+    nickSel.appendChild(o);
+  });
 }
 
 function renderChart(code, nick){
   if(!(code && nick)){ ensureChart([],[]); return; }
   const rows = progressData
-    .filter(r=>r.opentalk_code===code && r.nickname===nick)
+    .filter(r=>r.opentalk_code===code && String(r.nickname||'').trim()===nick)
     .map(r=>({ d:String(r.progress_date).slice(0,10), v:Number.parseFloat(r.progress) }))
     .filter(x=>x.d && Number.isFinite(x.v))
     .sort((a,b)=>a.d.localeCompare(b.d));
@@ -113,12 +119,11 @@ function renderTable(code){
   if(!code) return;
 
   const all = certData.filter(r=>r.opentalk_code===code);
-  const top = all.sort((a,b)=>(a.user_rank??9999)-(b.user_rank??9999)).slice(0,20);
+  const top = all.slice().sort((a,b)=>(a.user_rank??9999)-(b.user_rank??9999)).slice(0,20);
 
   top.forEach(r=>{
     const rank=r.user_rank??'';
     const cls = rank==1?'rank-1':rank==2?'rank-2':rank==3?'rank-3':'';
-    // 이름 우선순위: nickname > name
     const displayName = (r.nickname && r.nickname.trim())
       ? r.nickname.trim()
       : (r.name && r.name.trim()) ? r.name.trim() : '';
@@ -126,10 +131,7 @@ function renderTable(code){
       ? Number.parseFloat(r.average_week).toFixed(1) : '';
     const tr=document.createElement('tr');
     tr.innerHTML =
-      `<td class="${cls}">${rank}</td>
-       <td>${displayName}</td>
-       <td>${r.cert_days_count??''}</td>
-       <td>${avg}</td>`;
+      `<td class="${cls}">${rank}</td><td>${displayName}</td><td>${r.cert_days_count??''}</td><td>${avg}</td>`;
     tb.appendChild(tr);
   });
 
@@ -138,19 +140,15 @@ function renderTable(code){
 }
 
 // ▼ 이벤트
-$('#roomInput').addEventListener('change', ()=>{
-  const code = getSelectedRoomCode();
-  fillNicknames(code);
-  $('#nickInput').value = '';
-});
-$('#roomInput').addEventListener('input', ()=>{
+$('#roomSelect').addEventListener('change', ()=>{
   const code = getSelectedRoomCode();
   fillNicknames(code);
 });
+$('#nickSelect').addEventListener('change', ()=>{ /* 필요시 확장 */ });
 
 $('#applyBtn').addEventListener('click', ()=>{
   const code = getSelectedRoomCode();
-  const nick = ($('#nickInput').value || '').trim();
+  const nick = getSelectedNick();
 
   const label = code ? roomLabelFromCode(code) : '';
   const titleEl = document.getElementById('chartTitle');
@@ -160,30 +158,30 @@ $('#applyBtn').addEventListener('click', ()=>{
   renderTable(code);
 });
 
-
-
-// ▼ 데이터 로드 (빠졌던 부분)
+// ▼ 데이터 로드
 async function load(){
   const [p,c] = await Promise.all([
     fetch(progressUrl,{cache:'no-store'}),
     fetch(certUrl,{cache:'no-store'})
   ]);
-  progressData = toArray(await p.json());
-  certData     = toArray(await c.json());
+  const pj = await p.json();
+  const cj = await c.json();
 
-  fillRooms();           // 방 목록 채우기
-  ensureChart([],[]);    // 빈 차트 준비
-// 업데이트 시간 표시(Seoul TZ)
-const updateAt = (pj && pj.generated_at) || (cj && cj.generated_at);
-if(updateAt){
-  const d = new Date(updateAt);
-  const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
-}else{
-  $('#updateTime').textContent = '';
-}
-  
-  
+  latestGeneratedAt = pj.generated_at || cj.generated_at || null;
+  progressData = toArray(pj);
+  certData     = toArray(cj);
+
+  fillRooms();
+  ensureChart([],[]);
+
+  // 업데이트 시간 표시(Seoul TZ)
+  if(latestGeneratedAt){
+    const d = new Date(latestGeneratedAt);
+    const formatted = d.toLocaleString('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    $('#updateTime').textContent = `최근 업데이트 시각 : ${formatted}`;
+  }else{
+    $('#updateTime').textContent = '';
+  }
 }
 load().catch(e=>{
   console.error(e);
